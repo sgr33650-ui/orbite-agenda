@@ -2,7 +2,11 @@
 
 Agenda futuriste : vues jour, semaine, mois et année, coffre sécurisé par empreinte digitale, documents et photos dans les événements, partage rapide, thèmes, couleurs, polices et sons personnalisables, import de l'ancien agenda (.ics).
 
-## Installer sur le téléphone
+## Installer sur le téléphone (le plus simple)
+
+Ouvrez **https://sgr33650-ui.github.io/orbite-agenda/** dans Chrome, puis touchez **Installer**. Aucun fichier à ouvrir, aucun compte.
+
+## Installer avec le fichier APK
 
 Lien direct vers la dernière version :
 **https://github.com/sgr33650-ui/orbite-agenda/releases/latest/download/Orbite.apk**

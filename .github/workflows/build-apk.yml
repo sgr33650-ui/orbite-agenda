@@ -12,7 +12,8 @@ permissions:
   contents: write
 
 jobs:
-  apk:
+  build:
+    name: Compiler
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,12 +40,59 @@ jobs:
           name: Orbite-apk
           path: Orbite.apk
 
+  test:
+    name: Tester sur un téléphone virtuel
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Orbite-apk
+
+      - name: Activer l'accélération matérielle
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Installer et tester Orbite
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash ci/test-telephone.sh Orbite.apk
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capture-test
+          path: orbite-test.png
+          if-no-files-found: ignore
+
+  release:
+    name: Publier
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Orbite-apk
+
       - name: Publier la version
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: Orbite 1.0.${{ github.run_number }}
           body: |
-            Téléchargez **Orbite.apk** ci-dessous et ouvrez-le sur votre téléphone Android pour l'installer ou le mettre à jour.
+            Version testée automatiquement sur un téléphone Android virtuel avant publication.
+            Téléchargez **Orbite.apk** ci-dessous et ouvrez-le sur votre téléphone pour installer ou mettre à jour (vos données sont conservées).
           files: Orbite.apk
           make_latest: true

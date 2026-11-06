@@ -2,11 +2,7 @@
 
 Agenda futuriste : vues jour, semaine, mois et année, coffre sécurisé par empreinte digitale, documents et photos dans les événements, partage rapide, thèmes, couleurs, polices et sons personnalisables, import de l'ancien agenda (.ics).
 
-## Installer sur le téléphone (le plus simple)
-
-Ouvrez **https://sgr33650-ui.github.io/orbite-agenda/** dans Chrome, puis touchez **Installer**. Aucun fichier à ouvrir, aucun compte.
-
-## Installer avec le fichier APK
+## Installer sur le téléphone
 
 Lien direct vers la dernière version :
 **https://github.com/sgr33650-ui/orbite-agenda/releases/latest/download/Orbite.apk**
@@ -15,10 +11,16 @@ Lien direct vers la dernière version :
 2. Ouvrez le fichier téléchargé, puis autorisez l'installation depuis le navigateur si Android le demande.
 3. Pour une mise à jour, refaites la même chose : vos données sont conservées.
 
+## Reprendre l'ancien agenda
+
+Dans Orbite, touchez **Importer mon ancien agenda** (ou Paramètres › Importer l’agenda du téléphone) : les rendez-vous de tous les comptes du téléphone (Google, Xiaomi, Outlook…) sont copiés. Un nouvel import n’ajoute que les nouveautés.
+
 ## Fonctionnement
 
-Chaque envoi sur la branche `main` fabrique automatiquement un nouvel APK (onglet **Actions**) et le publie dans **Releases**.
+Chaque envoi sur la branche `main` fabrique automatiquement un nouvel APK, l’installe et le teste sur un téléphone Android virtuel (onglet **Actions**), puis le publie dans **Releases** seulement si le test réussit.
 
 - `app/src/main/assets/www/index.html` : l'interface de l'agenda
 - `app/src/main/java/com/orbite/agenda/MainActivity.java` : la partie Android (empreinte, partage, notifications, fichiers)
+- `app/src/main/java/com/orbite/agenda/PhoneCalendar.java` : lecture de l’agenda du téléphone pour l’import
+- `ci/test-telephone.sh` : test automatique sur téléphone virtuel
 - `keystore/orbite.jks` : clé de signature, toujours la même pour que les mises à jour s'installent par-dessus

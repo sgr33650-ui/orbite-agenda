@@ -11,6 +11,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
+import android.util.Log;
+import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -21,6 +23,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
@@ -31,6 +35,8 @@ import androidx.core.content.FileProvider;
 import androidx.fragment.app.FragmentActivity;
 import androidx.webkit.WebViewAssetLoader;
 
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.concurrent.Executor;
@@ -40,21 +46,29 @@ import java.util.concurrent.Executor;
  * L'interface est servie depuis les assets via une origine https locale
  * (stockage IndexedDB et chiffrement WebCrypto disponibles).
  * Le pont "OrbiteNative" donne accès au capteur d'empreinte, au partage
- * Android, aux notifications et à l'ouverture des pièces jointes.
+ * Android, aux notifications, à l'ouverture des pièces jointes et à la
+ * lecture de l'agenda du téléphone pour l'import.
  */
 public class MainActivity extends FragmentActivity {
 
     private static final String START_URL = "https://appassets.androidplatform.net/assets/www/index.html";
     private static final String CHANNEL_ID = "rappels";
     private static final int REQ_FILES = 41;
+    private static final String TEST_TAG = "ORBITE_SELFTEST";
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
+    private ActivityResultLauncher<String> calendarPermission;
+    private boolean selftest;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        calendarPermission = registerForActivityResult(new ActivityResultContracts.RequestPermission(),
+                granted -> js("window.__calPerm&&window.__calPerm(" + Boolean.TRUE.equals(granted) + ")"));
+        selftest = getIntent() != null && getIntent().getBooleanExtra("orbite_selftest", false);
 
         final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
@@ -80,6 +94,11 @@ public class MainActivity extends FragmentActivity {
             }
 
             @Override
+            public void onPageFinished(WebView view, String url) {
+                if (selftest) view.evaluateJavascript("window.__orbiteSelftest&&window.__orbiteSelftest()", null);
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri u = request.getUrl();
                 if ("appassets.androidplatform.net".equals(u.getHost())) return false;
@@ -91,6 +110,12 @@ public class MainActivity extends FragmentActivity {
         });
 
         web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage m) {
+                Log.i("ORBITE_JS", m.messageLevel() + " " + m.message() + " (ligne " + m.lineNumber() + ")");
+                return true;
+            }
+
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
@@ -116,6 +141,8 @@ public class MainActivity extends FragmentActivity {
                 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7);
         }
+
+        if (selftest) runNativeSelftest();
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl(START_URL);
@@ -151,6 +178,25 @@ public class MainActivity extends FragmentActivity {
         web.evaluateJavascript("(window.__back&&window.__back())?'1':'0'", value -> {
             if (value == null || !value.contains("1")) MainActivity.super.onBackPressed();
         });
+    }
+
+    /** Mode test (lancé uniquement par le test automatique) : vérifie la lecture de l'agenda. */
+    private void runNativeSelftest() {
+        new Thread(() -> {
+            try {
+                long now = System.currentTimeMillis();
+                String r = PhoneCalendar.read(getContentResolver(), now - 400L * 86400000L, now + 800L * 86400000L);
+                JSONObject o = new JSONObject(r);
+                if (o.optBoolean("ok")) {
+                    Log.i(TEST_TAG, "NATIVE ok=true calendars=" + o.getJSONArray("calendars").length()
+                            + " events=" + o.getJSONArray("events").length());
+                } else {
+                    Log.e(TEST_TAG, "NATIVE ok=false error=" + o.optString("error"));
+                }
+            } catch (Exception e) {
+                Log.e(TEST_TAG, "NATIVE FAIL " + e);
+            }
+        }).start();
     }
 
     private void createChannel() {
@@ -256,6 +302,37 @@ public class MainActivity extends FragmentActivity {
             }
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(i);
+        }
+
+        @JavascriptInterface
+        public boolean hasCalendarPermission() {
+            return ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED;
+        }
+
+        @JavascriptInterface
+        public void requestCalendarPermission() {
+            runOnUiThread(() -> calendarPermission.launch(Manifest.permission.READ_CALENDAR));
+        }
+
+        @JavascriptInterface
+        public String readPhoneCalendar(double fromMs, double toMs) {
+            if (!hasCalendarPermission()) return "{\"ok\":false,\"error\":\"permission\"}";
+            return PhoneCalendar.read(getContentResolver(), (long) fromMs, (long) toMs);
+        }
+
+        @JavascriptInterface
+        public void openAppSettings() {
+            Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            i.setData(Uri.parse("package:" + getPackageName()));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                startActivity(i);
+            } catch (ActivityNotFoundException ignored) { }
+        }
+
+        @JavascriptInterface
+        public void selftestResult(String result) {
+            Log.i(TEST_TAG, "JS " + result);
         }
 
         @JavascriptInterface

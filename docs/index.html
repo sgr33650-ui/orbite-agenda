@@ -120,6 +120,8 @@ svg{display:block}
 .btn.ghost:hover{border-color:var(--accent);color:var(--ink)}
 .btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,transparent)}
 .btn.danger:hover{background:color-mix(in srgb,var(--danger) 12%,transparent)}
+.btn:disabled{opacity:.5;cursor:default;box-shadow:none}
+.cal-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c);margin-right:8px;vertical-align:1px;box-shadow:0 0 calc(6px * var(--glow)) var(--c)}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .sp{flex:1}
 .form{display:flex;flex-direction:column;gap:16px}
@@ -400,6 +402,9 @@ button.fp:hover{background:radial-gradient(circle,color-mix(in srgb,var(--accent
 
 <script>
 'use strict';
+window.__errs=[];
+addEventListener('error',e=>{window.__errs.push(String(e.message||e))});
+addEventListener('unhandledrejection',e=>{const r=e.reason;window.__errs.push('promesse : '+String(r&&r.message||r))});
 /* =========================================================
    ORBITE — prototype d'agenda (web installable, Android + PC)
    ========================================================= */
@@ -457,8 +462,9 @@ const REMIND=[[0,'Aucun'],[5,'5 min avant'],[15,'15 min avant'],[30,'30 min avan
 const fontStack=f=>f==='system'?'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif':`'${f}',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif`;
 const DEF={theme:'auto',accent:'#4CC9F0',font:'Sora',scale:100,glow:true,sound:'cristal',volume:60,defaultView:'month',holidays:true,autoLock:2};
 
+const NATIVE=!!window.OrbiteNative;
 const S={view:'month',cur:new Date(),events:[],secure:[],settings:{...DEF},vault:null,vaultKey:null,fired:new Set(),sheetKind:null,lastKey:''};
-let VIS=[];
+let VIS=[],DAYIDX=new Map();
 
 /* ---------- stockage local (IndexedDB) ---------- */
 const DB={db:null,mem:{},
@@ -511,9 +517,17 @@ function visible(){
   return l;
 }
 const sortEv=(a,b)=>(b.allDay-a.allDay)||(a.start<b.start?-1:a.start>b.start?1:0);
+function buildDayIndex(list){
+  const m=new Map();
+  for(const ev of list){
+    const[s,e]=range(ev);let d=new Date(s.getFullYear(),s.getMonth(),s.getDate()),n=0;
+    while(d<e&&n<400){const k=ymd(d);let a=m.get(k);if(!a){a=[];m.set(k,a)}a.push(ev);d=addDays(d,1);n++}
+  }
+  return m;
+}
 function eventsForDay(ds){
-  const d0=parseYMD(ds),d1=addDays(d0,1);
-  const out=VIS.filter(ev=>{const[s,e]=range(ev);return s<d1&&e>d0});
+  const d0=parseYMD(ds);
+  const out=(DAYIDX.get(ds)||[]).slice();
   if(S.settings.holidays){const h=holidays(d0.getFullYear())[ds];if(h)out.push({id:'h'+ds,title:h,start:ds,end:ds,allDay:true,holiday:true,color:'#8693AD'})}
   return out.sort(sortEv);
 }
@@ -536,7 +550,7 @@ function periodLabel(){
 function viewKey(){const c=S.cur;return S.view+'|'+(S.view==='week'?ymd(startOfWeek(c)):S.view==='month'?c.getFullYear()+'-'+c.getMonth():S.view==='year'?c.getFullYear():ymd(c))}
 
 function render(){
-  VIS=visible();
+  VIS=visible();DAYIDX=buildDayIndex(VIS);
   $('#period').innerHTML=periodLabel();
   document.querySelectorAll('#views button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.v===S.view)));
   const main=$('#main'),prevTop=main.scrollTop,key=viewKey(),same=key===S.lastKey;
@@ -557,7 +571,8 @@ function render(){
 
 function banner(){
   if(!S.events.some(e=>e.sample))return '';
-  return `<div class="banner"><p><b>Ces événements sont des exemples.</b> Importez l'export .ics de votre ancien agenda (Google, Outlook, Samsung, Apple) pour retrouver tous vos rendez-vous.</p>
+  const txt=NATIVE?"Touchez « Importer mon ancien agenda » : Orbite copie en un geste les rendez-vous déjà présents sur ce téléphone (Google, Xiaomi, Outlook…).":"Importez l'export .ics de votre ancien agenda (Google, Outlook, Samsung, Apple) pour retrouver tous vos rendez-vous.";
+  return `<div class="banner"><p><b>Ces événements sont des exemples.</b> ${txt}</p>
   <div class="row"><button class="btn pri" data-act="import">${I.imp}Importer mon ancien agenda</button><button class="btn ghost" data-act="clear">Effacer les exemples</button></div></div>`;
 }
 
@@ -662,7 +677,7 @@ $('#fab').onclick=()=>{
 $('#view').addEventListener('click',e=>{
   const sh=e.target.closest('[data-share]');if(sh){e.stopPropagation();quickShare(sh.dataset.share);return}
   const ev=e.target.closest('[data-id]');if(ev){openDetail(ev.dataset.id);return}
-  const act=e.target.closest('[data-act]');if(act){if(act.dataset.act==='import')$('#gImport').click();else clearSamples();return}
+  const act=e.target.closest('[data-act]');if(act){if(act.dataset.act==='import'){if(NATIVE)importPhone();else $('#gImport').click()}else clearSamples();return}
   const go=e.target.closest('[data-goto]');if(go){S.cur=parseYMD(go.dataset.goto);S.view='day';render();return}
   const mo=e.target.closest('[data-month]');if(mo){S.cur=new Date(+mo.dataset.year,+mo.dataset.month,1);S.view='month';render();return}
   const col=e.target.closest('.tg-col');if(col){const r=col.getBoundingClientRect();const mins=Math.min(1410,Math.max(0,Math.floor((e.clientY-r.top)/52*2)*30));openEditor(null,{date:col.dataset.day,mins})}
@@ -863,9 +878,9 @@ function openAtt(a){
     let txt='';try{const b=atob(a.data.split(',')[1]||'');txt=new TextDecoder().decode(Uint8Array.from(b,c=>c.charCodeAt(0)))}catch(e){txt='(contenu illisible)'}
     body=`<pre>${esc(txt.slice(0,30000))}</pre>`;
   } else{let url='';try{const b=atob(a.data.split(',')[1]||'');url=URL.createObjectURL(new Blob([Uint8Array.from(b,c=>c.charCodeAt(0))],{type:a.type}))}catch(e){}
-    body=`<div class="lb-info"><b>${esc(a.name)}</b>${esc(a.type)} · ${sz(a.size)}<br><br>${url?`<a class="btn pri" href="${url}" target="_blank" rel="noopener" download="${esc(a.name)}">Ouvrir le fichier</a>`:''}</div>`}
+    if(NATIVE){body=`<div class="lb-info"><b>${esc(a.name)}</b>${esc(a.type)} · ${sz(a.size)}<br><br><button class="btn pri" id="lb-open">Ouvrir le fichier</button></div>`}else body=`<div class="lb-info"><b>${esc(a.name)}</b>${esc(a.type)} · ${sz(a.size)}<br><br>${url?`<a class="btn pri" href="${url}" target="_blank" rel="noopener" download="${esc(a.name)}">Ouvrir le fichier</a>`:''}</div>`}
   lb.innerHTML=`<button class="ib lb-close" aria-label="Fermer l’aperçu">${I.close}</button>${body}<div class="mono" style="font-size:12px;color:#8693AD">${esc(a.name)} · ${sz(a.size)}</div>`;
-  lb.hidden=false;lb.querySelector('.lb-close').onclick=closeLightbox;lb.onclick=e=>{if(e.target===lb)closeLightbox()};
+  lb.hidden=false;lb.querySelector('.lb-close').onclick=closeLightbox;const lo=lb.querySelector('#lb-open');if(lo)lo.onclick=()=>OrbiteNative.openFile(a.data,a.name,a.type);lb.onclick=e=>{if(e.target===lb)closeLightbox()};
 }
 function closeLightbox(){const lb=$('#lightbox');lb.hidden=true;lb.innerHTML=''}
 
@@ -882,6 +897,7 @@ function toICS(list){
 }
 function quickShare(id){
   const e=findEv(id);if(!e)return;const text=shareText(e);
+  if(NATIVE){try{OrbiteNative.share(e.title,text);return}catch(x){}}
   if(navigator.share){navigator.share({title:e.title,text}).then(()=>toast('Partagé')).catch(err=>{if(err&&err.name==='AbortError')return;openShareSheet(e)});return}
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(()=>{play('bip');toast('Événement copié · collez-le dans un SMS, WhatsApp ou un e-mail',3600)}).catch(()=>openShareSheet(e));return}
   openShareSheet(e);
@@ -1024,9 +1040,12 @@ function vaultList(){
 function bioMsg(e){
   const n=e&&e.name;
   if(n==='NotAllowedError')return 'Empreinte refusée ou annulée. Utilisez votre code.';
+  if(NATIVE)return 'Aucune empreinte enregistrée sur ce téléphone. Ajoutez-en une dans Paramètres › Sécurité, puis réessayez.';
   return 'Aucun capteur d’empreinte n’a répondu sur cet appareil. Vérifiez qu’une empreinte est enregistrée dans les réglages du téléphone (ou Windows Hello sur PC), puis réessayez. Votre code fonctionne toujours.';
 }
+function nativeBio(title){return new Promise((res,rej)=>{window.__bioDone=(ok,msg)=>{window.__bioDone=null;ok?res():rej(Object.assign(new Error(msg||'refus'),{name:'NotAllowedError'}))};try{OrbiteNative.biometric(title)}catch(e){rej(e)}})}
 async function bioRegister(){
+  if(NATIVE){if(!OrbiteNative.hasBiometric())throw new Error('none');await nativeBio('Activer l’empreinte');S.vault.bio={native:true,rawKey:b64(new Uint8Array(await crypto.subtle.exportKey('raw',S.vaultKey)))};await DB.set('vault',S.vault);return}
   if(!window.PublicKeyCredential||!navigator.credentials)throw new Error('unsupported');
   const cred=await navigator.credentials.create({publicKey:{challenge:rand(32),rp:{name:'Orbite'},user:{id:rand(16),name:'orbite-coffre',displayName:'Coffre Orbite'},
     pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'discouraged'},timeout:60000}});
@@ -1034,8 +1053,9 @@ async function bioRegister(){
   await DB.set('vault',S.vault);
 }
 async function bioUnlock(){
-  if(!window.PublicKeyCredential||!navigator.credentials)throw new Error('unsupported');
-  await navigator.credentials.get({publicKey:{challenge:rand(32),allowCredentials:[{type:'public-key',id:ub64(S.vault.bio.credId)}],userVerification:'required',timeout:60000}});
+  if(S.vault.bio.native){await nativeBio('Ouvrir le coffre');}
+  else{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error('unsupported');
+  await navigator.credentials.get({publicKey:{challenge:rand(32),allowCredentials:[{type:'public-key',id:ub64(S.vault.bio.credId)}],userVerification:'required',timeout:60000}});}
   const key=await crypto.subtle.importKey('raw',ub64(S.vault.bio.rawKey),'AES-GCM',true,['encrypt','decrypt']);
   S.secure=await decJSON(key,S.vault.box);S.vaultKey=key;
 }
@@ -1068,21 +1088,23 @@ function openSettings(){
   <section class="set-sec"><h3>Son</h3>
     <div class="fld"><span>Son des rappels et confirmations</span>${seg('s-sound',SOUNDS,s.sound)}</div>
     <label class="fld"><span>Volume · <output id="s-vol-o">${s.volume} %</output></span><input type="range" id="s-vol" min="0" max="100" step="5" value="${s.volume}"></label>
-    <div class="row"><button class="btn ghost" id="s-notif">${I.bell}${('Notification' in window&&Notification.permission==='granted')?'Notifications activées':'Activer les notifications'}</button></div>
-    <p class="hint">Les rappels sonnent et s’affichent en notification tant qu’Orbite est ouverte ou en arrière-plan récent.</p>
+    <div class="row"><button class="btn ghost" id="s-notif">${I.bell}${NATIVE?(OrbiteNative.notificationsAllowed()?'Tester une notification':'Autoriser les notifications'):(('Notification' in window&&Notification.permission==='granted')?'Notifications activées':'Activer les notifications')}</button></div>
+    <p class="hint">Les rappels sonnent et s’affichent en notification quand Orbite est ouverte ou en arrière-plan.</p>
   </section>
   <section class="set-sec"><h3>Affichage</h3>
     <div class="fld"><span>Vue à l’ouverture</span>${seg('s-dv',[['day','Jour'],['week','Semaine'],['month','Mois'],['year','Année']],s.defaultView)}</div>
     <label class="sw"><input type="checkbox" id="s-hol" ${s.holidays?'checked':''}><span>Jours fériés (France)<small>Pâques, Ascension et Pentecôte calculés chaque année</small></span></label>
   </section>
   <section class="set-sec"><h3>Reprendre mon ancien agenda</h3>
-    <p class="hint">Exportez votre agenda actuel au format .ics, puis importez-le ici. Google Agenda : Paramètres › Importer et exporter › Exporter. Outlook : Fichier › Enregistrer le calendrier. Samsung ou Apple : partagez le calendrier en fichier .ics.</p>
-    <div class="row"><label class="btn pri filebtn">${I.imp}Importer un fichier .ics<input type="file" id="s-import" accept=".ics,.ical,.ifb,.json,text/calendar,application/json" hidden></label>
+    ${NATIVE?`<p class="hint">Orbite copie les rendez-vous déjà présents sur ce téléphone : Google Agenda, Agenda Xiaomi, Outlook… Votre ancien agenda n’est pas modifié, et un nouvel import n’ajoute que les nouveautés.</p>
+    <div class="row"><button class="btn pri" id="s-phone">${I.imp}Importer l’agenda du téléphone</button></div>`:''}
+    <p class="hint">${NATIVE?'Autre possibilité : un fichier .ics exporté depuis un ordinateur.':'Exportez votre agenda actuel au format .ics, puis importez-le ici. Google Agenda : Paramètres › Importer et exporter › Exporter. Outlook : Fichier › Enregistrer le calendrier. Samsung ou Apple : partagez le calendrier en fichier .ics.'}</p>
+    <div class="row"><label class="btn ${NATIVE?'ghost':'pri'} filebtn">${I.imp}Importer un fichier .ics<input type="file" id="s-import" accept=".ics,.ical,.ifb,.json,text/calendar,application/json" hidden></label>
     <button class="btn ghost" id="s-backup">${I.copy}Copier une sauvegarde</button>${hasSamples?'<button class="btn ghost" id="s-clear">Effacer les exemples</button>':''}</div>
   </section>
   <section class="set-sec"><h3>Synchronisation automatique</h3>
     <div class="sync">${[['Google Agenda','API Google Calendar · bidirectionnelle'],['Outlook / Microsoft 365','Microsoft Graph · bidirectionnelle'],['iCloud (Apple)','CalDAV · bidirectionnelle'],['Samsung Agenda','Via le compte Google ou Samsung du téléphone']].map(([n,d])=>`<div><span style="min-width:0"><b>${n}</b><small>${d}</small></span><span class="pill acc">Appli native</span></div>`).join('')}</div>
-    <p class="hint">Pour l’instant, vos données restent sur cet appareil (sauvegarde possible ci-dessus). La connexion aux comptes Google, Outlook et iCloud arrive à l’étape suivante : elle demande l’enregistrement d’Orbite auprès de ces services.</p>
+    <p class="hint">${NATIVE?'Sur ce téléphone, « Importer l’agenda du téléphone » récupère déjà les rendez-vous de tous les comptes synchronisés. ':''}Vos données restent sur cet appareil (sauvegarde possible ci-dessus). La connexion aux comptes Google, Outlook et iCloud arrive à l’étape suivante : elle demande l’enregistrement d’Orbite auprès de ces services.</p>
   </section>
   <section class="set-sec"><h3>Raccourcis clavier</h3><p class="hint mono">N nouvel événement · T aujourd’hui · ← → période · J S M A changer de vue · Échap fermer</p></section>`,'settings',sh=>{
     const set=(k,v)=>{S.settings[k]=v;applySettings();saveSettings()};
@@ -1097,10 +1119,11 @@ function openSettings(){
     sh.querySelector('#s-glow').onchange=e=>set('glow',e.target.checked);
     sh.querySelector('#s-hol').onchange=e=>{set('holidays',e.target.checked);render()};
     sh.querySelector('#s-import').onchange=async e=>{await importFile(e.target.files[0]);e.target.value=''};
+    const sp=sh.querySelector('#s-phone');if(sp)sp.onclick=()=>importPhone();
     sh.querySelector('#s-backup').onclick=()=>{const txt=JSON.stringify({app:'Orbite',version:1,exported:new Date().toISOString(),events:S.events.filter(e=>!e.sample)});
       if(navigator.clipboard)navigator.clipboard.writeText(txt).then(()=>toast('Sauvegarde copiée (hors coffre)')).catch(()=>toast('Copie refusée par le navigateur'));else toast('Copie indisponible ici')};
     const cl=sh.querySelector('#s-clear');if(cl)cl.onclick=clearSamples;
-    sh.querySelector('#s-notif').onclick=async e=>{if(!('Notification' in window)){toast('Notifications non prises en charge sur ce navigateur');return}
+    sh.querySelector('#s-notif').onclick=async e=>{if(NATIVE){if(OrbiteNative.notificationsAllowed()){notify('Orbite','Les rappels s’afficheront ici.');toast('Notification de test envoyée')}else OrbiteNative.openNotificationSettings();return}if(!('Notification' in window)){toast('Notifications non prises en charge sur ce navigateur');return}
       const p=await Notification.requestPermission();if(p==='granted'){e.currentTarget.lastChild.textContent='Notifications activées';notify('Orbite','Les rappels s’afficheront ici.')}else toast('Notifications refusées · modifiable dans les réglages du téléphone',4000)};
   });
 }
@@ -1115,20 +1138,173 @@ function checkReminders(){
   }
 }
 
+/* ---------- bouton retour Android ---------- */
+window.__back=()=>{
+  if(!$('#lightbox').hidden){closeLightbox();return true}
+  if(!$('#confirmWrap').hidden){const c=$('#confirmWrap [data-cancel].btn');if(c)c.click();return true}
+  if(!$('#sheetWrap').hidden){closeSheet();return true}
+  if(S.view==='day'){S.view='month';render();return true}
+  return false;
+};
+
 /* ---------- application installable ---------- */
 let swReg=null,installEvt=null;
-function notify(title,body){try{if(!('Notification' in window)||Notification.permission!=='granted')return;
+function notify(title,body){if(NATIVE){try{OrbiteNative.showNotification(title,body)}catch(e){}return}try{if(!('Notification' in window)||Notification.permission!=='granted')return;
   if(swReg)swReg.showNotification(title,{body,icon:'icons/icon-192.png',badge:'icons/icon-192.png',tag:title,vibrate:[120,60,120]});else new Notification(title,{body,icon:'icons/icon-192.png'})}catch(e){}}
-if('serviceWorker' in navigator&&location.protocol!=='file:'){addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').then(r=>{swReg=r}).catch(()=>{})})}
+if(!NATIVE&&'serviceWorker' in navigator&&location.protocol!=='file:'){addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').then(r=>{swReg=r}).catch(()=>{})})}
 addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;$('#installBtn').hidden=false});
 $('#installBtn').onclick=async()=>{if(!installEvt)return;installEvt.prompt();const r=await installEvt.userChoice;installEvt=null;$('#installBtn').hidden=true;if(r.outcome==='accepted')toast('Orbite est installée sur votre écran d’accueil')};
 addEventListener('appinstalled',()=>{$('#installBtn').hidden=true});
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 (()=>{const p=new URLSearchParams(location.search);const v=p.get('vue');if(['day','week','month','year'].includes(v))S.settings.defaultView=v})();
 
+/* ---------- import de l'agenda du téléphone (application Android) ---------- */
+const PHONE_DAYS_BACK=365,PHONE_DAYS_AHEAD=730;
+function askCalendarPermission(){
+  return new Promise(res=>{
+    try{if(OrbiteNative.hasCalendarPermission()){res(true);return}}catch(e){res(false);return}
+    const t=setTimeout(()=>{window.__calPerm=null;res(false)},120000);
+    window.__calPerm=ok=>{clearTimeout(t);window.__calPerm=null;res(!!ok)};
+    try{OrbiteNative.requestCalendarPermission()}catch(e){clearTimeout(t);res(false)}
+  });
+}
+function readPhone(){
+  const now=Date.now(),from=now-PHONE_DAYS_BACK*864e5,to=now+PHONE_DAYS_AHEAD*864e5;
+  let d;try{d=JSON.parse(OrbiteNative.readPhoneCalendar(from,to))}catch(e){d={ok:false,error:String(e&&e.message||e)}}
+  d.from=from;d.to=to;return d;
+}
+function phoneToEvent(r,cal){
+  const b=Number(r.begin),e0=Number(r.end);
+  if(!isFinite(b))return null;
+  const ev={id:uid(),src:`tel:${r.eid}:${b}`,title:String(r.title||'').trim()||'(Sans titre)',location:String(r.location||'').trim(),notes:String(r.description||'').trim(),
+    color:safeColor(r.color||(cal&&cal.color)),reminder:0,attachments:[],cal:cal?String(cal.name||''):''};
+  if(Number(r.allDay)){
+    const utc=b%864e5===0,day=t=>utc?new Date(t).toISOString().slice(0,10):ymd(new Date(t));
+    const last=isFinite(e0)&&e0>b?e0-1:b;
+    ev.allDay=true;ev.start=day(b);ev.end=day(last);if(ev.end<ev.start)ev.end=ev.start;
+  }else{
+    const e=isFinite(e0)&&e0>b?e0:b+30*60000;
+    ev.allDay=false;ev.start=lt(new Date(b));ev.end=lt(new Date(e));
+  }
+  return ev;
+}
+async function applyPhoneImport(rows,selected,byId){
+  const srcs=new Set(S.events.map(e=>e.src).filter(Boolean));
+  const keys=new Set(S.events.filter(e=>!e.sample).map(e=>e.title+'|'+e.start));
+  const fresh=[];let dup=0;
+  for(const r of rows){
+    if(!selected.has(String(r.cal)))continue;
+    const ev=phoneToEvent(r,byId.get(String(r.cal)));if(!ev)continue;
+    const k=ev.title+'|'+ev.start;
+    if(srcs.has(ev.src)||keys.has(k)){dup++;continue}
+    srcs.add(ev.src);keys.add(k);fresh.push(ev);
+  }
+  const hadSamples=S.events.some(e=>e.sample);
+  S.events=S.events.filter(e=>!e.sample).concat(fresh);
+  await saveEvents();S.lastKey='';render();
+  return{ok:true,added:fresh.length,dup,hadSamples};
+}
+function importDoneMessage(r,truncated){
+  if(!r.added)return r.dup?'Tout est déjà dans Orbite : aucun doublon ajouté':'Aucun rendez-vous à importer';
+  return `${r.added} rendez-vous importé${r.added>1?'s':''}${r.dup?` · ${r.dup} déjà présent${r.dup>1?'s':''}`:''}${truncated?' · limite de 10 000 atteinte':''}`;
+}
+async function importPhone(opts={}){
+  if(!NATIVE){$('#gImport').click();return{ok:false,error:'web'}}
+  const granted=await askCalendarPermission();
+  if(!granted){if(!opts.auto)phonePermissionSheet();return{ok:false,error:'permission'}}
+  const data=readPhone();
+  if(!data.ok){if(!opts.auto)phoneErrorSheet(data.error);return{ok:false,error:data.error||'lecture'}}
+  const rows=(data.events||[]).filter(r=>Number(r.status)!==2);
+  const cals=(data.calendars||[]).map(c=>({...c,n:0}));
+  const byId=new Map(cals.map(c=>[String(c.id),c]));
+  for(const r of rows){const c=byId.get(String(r.cal));if(c)c.n++}
+  const list=cals.filter(c=>c.n>0);
+  list.forEach(c=>{c.on=Number(c.visible)!==0&&!/f[ée]ri[ée]|holiday/i.test(String(c.name||''))});
+  if(opts.auto){
+    const r=await applyPhoneImport(rows,new Set(list.filter(c=>c.on).map(c=>String(c.id))),byId);
+    r.found=rows.length;r.calendars=list.length;return r;
+  }
+  phoneChooseSheet(data,list,rows,byId);
+  return{ok:true,pending:true};
+}
+function phoneChooseSheet(data,list,rows,byId){
+  const fmt=t=>new Date(t).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'});
+  if(!list.length){
+    openSheet(`<header class="sh-h"><h2>Aucun rendez-vous trouvé</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
+    <p class="hint" style="margin-bottom:16px">Ce téléphone ne contient aucun rendez-vous entre le ${fmt(data.from)} et le ${fmt(data.to)}. Si votre ancien agenda est un compte Google, vérifiez dans Paramètres › Comptes que la synchronisation de l’agenda est activée, puis réessayez.</p>
+    <div class="row"><button class="btn pri" id="ph-retry">Réessayer</button><button class="btn ghost" id="ph-ics">Importer un fichier .ics</button></div>`,'phone',sh=>{
+      sh.querySelector('#ph-retry').onclick=()=>importPhone();
+      sh.querySelector('#ph-ics').onclick=()=>{closeSheet();$('#gImport').click()};
+    });
+    return;
+  }
+  openSheet(`<header class="sh-h"><h2>Importer l’agenda du téléphone</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
+  <p class="hint" style="margin-bottom:16px">Rendez-vous du ${fmt(data.from)} au ${fmt(data.to)}. Cochez les agendas à copier dans Orbite. Votre ancien agenda n’est pas modifié.</p>
+  <div class="form" id="ph-list">${list.map(c=>`<label class="sw"><input type="checkbox" data-cal="${esc(String(c.id))}" ${c.on?'checked':''}><span><span class="cal-dot" style="--c:${safeColor(c.color)}"></span>${esc(c.name||'Agenda')}<small>${c.account&&c.account!==c.name?esc(c.account)+' · ':''}${c.n} rendez-vous</small></span></label>`).join('')}</div>
+  <footer class="sh-f"><span class="sp"></span><button class="btn ghost" data-close>Annuler</button><button class="btn pri" id="ph-go"></button></footer>`,'phone',sh=>{
+    const go=sh.querySelector('#ph-go');
+    const total=()=>list.filter(c=>c.on).reduce((n,c)=>n+c.n,0);
+    const upd=()=>{const n=total();go.textContent=n?`Importer ${n} rendez-vous`:'Cochez au moins un agenda';go.disabled=!n};
+    sh.querySelector('#ph-list').addEventListener('change',e=>{const c=list.find(x=>String(x.id)===e.target.dataset.cal);if(c){c.on=e.target.checked;upd()}});
+    upd();
+    go.onclick=async()=>{
+      go.disabled=true;go.textContent='Import en cours…';
+      try{
+        const r=await applyPhoneImport(rows,new Set(list.filter(c=>c.on).map(c=>String(c.id))),byId);
+        closeSheet();play(S.settings.sound);toast(importDoneMessage(r,data.truncated),5000);
+      }catch(e){go.disabled=false;upd();toast('L’import n’a pas abouti : '+String(e&&e.message||e),6000)}
+    };
+  });
+}
+function phonePermissionSheet(){
+  openSheet(`<header class="sh-h"><h2>Accès à l’agenda du téléphone</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
+  <p class="hint" style="margin-bottom:16px">Pour copier vos rendez-vous, Orbite doit pouvoir lire l’agenda du téléphone. Rien n’est modifié ni envoyé ailleurs. Touchez « Ouvrir les réglages », puis Autorisations › Agenda › Autoriser, et revenez ici.</p>
+  <div class="row"><button class="btn pri" id="ph-set">Ouvrir les réglages</button><button class="btn ghost" id="ph-retry">Réessayer</button></div>`,'phone',sh=>{
+    sh.querySelector('#ph-set').onclick=()=>{try{OrbiteNative.openAppSettings()}catch(e){}};
+    sh.querySelector('#ph-retry').onclick=()=>{closeSheet();importPhone()};
+  });
+}
+function phoneErrorSheet(err){
+  openSheet(`<header class="sh-h"><h2>Lecture de l’agenda impossible</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
+  <p class="hint" style="margin-bottom:16px">Le téléphone a refusé la lecture de l’agenda (${esc(err||'erreur inconnue')}). Réessayez ; si le problème continue, importez un fichier .ics.</p>
+  <div class="row"><button class="btn pri" id="ph-retry">Réessayer</button><button class="btn ghost" id="ph-ics">Importer un fichier .ics</button></div>`,'phone',sh=>{
+    sh.querySelector('#ph-retry').onclick=()=>{closeSheet();importPhone()};
+    sh.querySelector('#ph-ics').onclick=()=>{closeSheet();$('#gImport').click()};
+  });
+}
+
+/* ---------- auto-test (lancé uniquement par le test automatique) ---------- */
+window.__orbiteSelftest=async()=>{
+  const out={pass:false};
+  try{
+    await READY;
+    out.db=!!DB.db;
+    out.subtle=!!(window.crypto&&crypto.subtle);
+    const k=await deriveKey('2468',rand(16));out.crypto=(await decJSON(k,await encJSON(k,{v:42}))).v===42;
+    out.native=NATIVE;
+    if(NATIVE){
+      out.perm=OrbiteNative.hasCalendarPermission();
+      const r1=await importPhone({auto:true});
+      out.import={ok:r1.ok,added:r1.added,found:r1.found,calendars:r1.calendars,error:r1.error};
+      const r2=await importPhone({auto:true});
+      out.reimport={ok:r2.ok,added:r2.added,dup:r2.dup};
+      out.samples=S.events.filter(e=>e.sample).length;
+      out.allDayOk=S.events.filter(e=>e.allDay).every(e=>/^\d{4}-\d\d-\d\d$/.test(e.start)&&e.end>=e.start);
+      out.timedOk=S.events.filter(e=>!e.allDay).every(e=>/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(e.start)&&new Date(e.end)>new Date(e.start));
+    }
+    for(const v of ['day','week','month','year']){S.view=v;render()}
+    out.render=true;
+    out.errs=window.__errs.slice(0,5);
+    out.pass=out.db&&out.subtle&&out.crypto&&out.render&&!out.errs.length&&(!NATIVE||(out.import.ok&&out.reimport.ok&&out.reimport.added===0&&out.samples===0&&out.allDayOk&&out.timedOk));
+  }catch(e){out.error=String(e&&e.stack||e).slice(0,600)}
+  const txt=JSON.stringify(out);
+  try{if(NATIVE)OrbiteNative.selftestResult(txt)}catch(e){}
+  return txt;
+};
+
 /* ---------- démarrage ---------- */
 S.events=sampleEvents();applySettings();updateVaultBtn();render();
-(async()=>{
+const READY=(async()=>{try{
   await DB.open();
   const st=await DB.get('settings');if(st)S.settings={...DEF,...st};
   const ev=await DB.get('events');if(Array.isArray(ev))S.events=ev;else await DB.set('events',S.events);
@@ -1137,7 +1313,7 @@ S.events=sampleEvents();applySettings();updateVaultBtn();render();
   applySettings();updateVaultBtn();render();
   if(!DB.db)toast('Stockage indisponible : les modifications ne seront pas conservées',5000);
   checkReminders();
-})();
+}catch(e){window.__errs.push('démarrage : '+String(e&&e.message||e))}})();
 setInterval(checkReminders,30000);
 setInterval(()=>{const n=document.querySelector('.tg-now');if(n){const d=new Date();n.style.top=((d.getHours()*60+d.getMinutes())/60*52)+'px'}},60000);
 </script>

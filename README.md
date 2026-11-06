@@ -11,9 +11,12 @@ Lien direct vers la dernière version :
 2. Ouvrez le fichier téléchargé, puis autorisez l'installation depuis le navigateur si Android le demande.
 3. Pour une mise à jour, refaites la même chose : vos données sont conservées.
 
-## Reprendre l'ancien agenda
+## Reprendre l'ancien agenda et suivre les invitations reçues par mail
 
-Dans Orbite, touchez **Importer mon ancien agenda** (ou Paramètres › Importer l’agenda du téléphone) : les rendez-vous de tous les comptes du téléphone (Google, Xiaomi, Outlook…) sont copiés. Un nouvel import n’ajoute que les nouveautés.
+Dans Orbite, touchez **Importer mon ancien agenda** (ou Paramètres › Importer l’agenda du téléphone) : les rendez-vous de tous les comptes du téléphone (Google, Xiaomi, Outlook…) sont copiés, puis **suivis automatiquement** : nouveaux rendez-vous, modifications et annulations sont repris à chaque ouverture et en direct.
+
+- Gmail et Outlook placent les invitations reçues par mail dans l’agenda du téléphone : elles arrivent donc seules dans Orbite.
+- Autre boîte mail (Orange, Free, SFR, Yahoo…) : ouvrez la pièce jointe de l’invitation (fichier .ics) et choisissez Orbite.
 
 ## Fonctionnement
 

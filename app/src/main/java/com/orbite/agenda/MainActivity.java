@@ -7,9 +7,13 @@ import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.CalendarContract;
 import android.util.Base64;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
@@ -32,13 +36,17 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.content.IntentCompat;
 import androidx.fragment.app.FragmentActivity;
 import androidx.webkit.WebViewAssetLoader;
 
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executor;
 
 /**
@@ -60,6 +68,9 @@ public class MainActivity extends FragmentActivity {
     private ValueCallback<Uri[]> fileCallback;
     private ActivityResultLauncher<String> calendarPermission;
     private boolean selftest;
+    private ContentObserver calendarObserver;
+    private volatile boolean foreground;
+    private String pendingIcs;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -67,7 +78,10 @@ public class MainActivity extends FragmentActivity {
         super.onCreate(savedInstanceState);
 
         calendarPermission = registerForActivityResult(new ActivityResultContracts.RequestPermission(),
-                granted -> js("window.__calPerm&&window.__calPerm(" + Boolean.TRUE.equals(granted) + ")"));
+                granted -> {
+                    if (Boolean.TRUE.equals(granted)) watchCalendar();
+                    js("window.__calPerm&&window.__calPerm(" + Boolean.TRUE.equals(granted) + ")");
+                });
         selftest = getIntent() != null && getIntent().getBooleanExtra("orbite_selftest", false);
 
         final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
@@ -95,7 +109,7 @@ public class MainActivity extends FragmentActivity {
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                if (selftest) view.evaluateJavascript("window.__orbiteSelftest&&window.__orbiteSelftest()", null);
+                if (selftest) view.evaluateJavascript("window.__selftestMode=true;window.__orbiteSelftest&&window.__orbiteSelftest()", null);
             }
 
             @Override
@@ -146,6 +160,99 @@ public class MainActivity extends FragmentActivity {
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl(START_URL);
+
+        watchCalendar();
+        handleIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(@NonNull Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIntent(intent);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        foreground = true;
+        watchCalendar();
+        js("window.__onResume&&window.__onResume()");
+    }
+
+    @Override
+    protected void onPause() {
+        foreground = false;
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (calendarObserver != null) {
+            try {
+                getContentResolver().unregisterContentObserver(calendarObserver);
+            } catch (Exception ignored) { }
+            calendarObserver = null;
+        }
+        super.onDestroy();
+    }
+
+    /** Prévient l'interface dès que l'agenda du téléphone change (invitation reçue, modification…). */
+    private void watchCalendar() {
+        if (calendarObserver != null) return;
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) return;
+        ContentObserver o = new ContentObserver(new Handler(Looper.getMainLooper())) {
+            @Override
+            public void onChange(boolean selfChange) {
+                js("window.__onPhoneCalendarChange&&window.__onPhoneCalendarChange()");
+            }
+        };
+        try {
+            getContentResolver().registerContentObserver(CalendarContract.CONTENT_URI, true, o);
+            calendarObserver = o;
+        } catch (Exception ignored) { }
+    }
+
+    /** Invitation (.ics) ouverte depuis une boîte mail ou partagée vers Orbite. */
+    private void handleIntent(Intent i) {
+        if (i == null) return;
+        final String action = i.getAction();
+        final Uri data = i.getData();
+        final boolean view = Intent.ACTION_VIEW.equals(action) && data != null;
+        final boolean send = Intent.ACTION_SEND.equals(action);
+        if (!view && !send) return;
+        final Uri stream = send ? IntentCompat.getParcelableExtra(i, Intent.EXTRA_STREAM, Uri.class) : null;
+        final CharSequence text = send ? i.getCharSequenceExtra(Intent.EXTRA_TEXT) : null;
+        if (!view && stream == null && text == null) return;
+        new Thread(() -> {
+            String content;
+            try {
+                if (view) content = readUri(data);
+                else if (stream != null) content = readUri(stream);
+                else content = text.toString();
+            } catch (Exception e) {
+                content = "ORBITE_ERREUR:" + e.getClass().getSimpleName();
+            }
+            if (content == null) return;
+            synchronized (MainActivity.this) { pendingIcs = content; }
+            js("window.__onIcs&&window.__onIcs()");
+        }).start();
+    }
+
+    private String readUri(Uri u) throws Exception {
+        try (InputStream in = getContentResolver().openInputStream(u)) {
+            if (in == null) return null;
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            int total = 0;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                total += n;
+                if (total > 5_000_000) break;
+            }
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        }
     }
 
     @Override
@@ -328,6 +435,20 @@ public class MainActivity extends FragmentActivity {
             try {
                 startActivity(i);
             } catch (ActivityNotFoundException ignored) { }
+        }
+
+        @JavascriptInterface
+        public boolean isForeground() {
+            return foreground;
+        }
+
+        @JavascriptInterface
+        public String takeIcs() {
+            synchronized (MainActivity.this) {
+                String t = pendingIcs;
+                pendingIcs = null;
+                return t == null ? "" : t;
+            }
         }
 
         @JavascriptInterface

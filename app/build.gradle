@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.orbite.agenda'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.orbite.agenda'
+        minSdk 24
+        targetSdk 34
+        versionCode Integer.parseInt(System.getenv('BUILD_NUMBER') ?: '1')
+        versionName "1.0." + (System.getenv('BUILD_NUMBER') ?: '1')
+    }
+
+    signingConfigs {
+        orbite {
+            storeFile rootProject.file('keystore/orbite.jks')
+            storePassword 'orbite2026'
+            keyAlias 'orbite'
+            keyPassword 'orbite2026'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.orbite
+        }
+        debug {
+            signingConfig signingConfigs.orbite
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.fragment:fragment:1.8.2'
+    implementation 'androidx.biometric:biometric:1.1.0'
+    implementation 'androidx.webkit:webkit:1.11.0'
+}

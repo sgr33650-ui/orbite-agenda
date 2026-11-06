@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="orbite_fond">#070A11</color>
+    <style name="OrbiteTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/orbite_fond</item>
+        <item name="android:statusBarColor">@color/orbite_fond</item>
+        <item name="android:navigationBarColor">@color/orbite_fond</item>
+        <item name="android:colorAccent">#4CC9F0</item>
+    </style>
+</resources>

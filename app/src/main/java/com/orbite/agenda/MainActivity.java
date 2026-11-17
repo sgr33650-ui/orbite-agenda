@@ -9,6 +9,10 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Build;
@@ -41,6 +45,7 @@ import androidx.core.content.IntentCompat;
 import androidx.fragment.app.FragmentActivity;
 import androidx.webkit.WebViewAssetLoader;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -48,6 +53,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Orbite — application Android.
@@ -69,6 +77,7 @@ public class MainActivity extends FragmentActivity {
     private ActivityResultLauncher<String> calendarPermission;
     private boolean selftest;
     private boolean biotest;
+    private boolean appstest;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private String clipSecret;
     private long clipUntil;
@@ -88,6 +97,7 @@ public class MainActivity extends FragmentActivity {
                 });
         selftest = getIntent() != null && getIntent().getBooleanExtra("orbite_selftest", false);
         biotest = getIntent() != null && getIntent().getBooleanExtra("orbite_biotest", false);
+        appstest = getIntent() != null && getIntent().getBooleanExtra("orbite_appstest", false);
 
         final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
@@ -116,6 +126,7 @@ public class MainActivity extends FragmentActivity {
             public void onPageFinished(WebView view, String url) {
                 if (selftest) view.evaluateJavascript("window.__selftestMode=true;window.__orbiteSelftest&&window.__orbiteSelftest()", null);
                 else if (biotest) view.evaluateJavascript("window.__selftestMode=true;window.__orbiteBioTest&&window.__orbiteBioTest()", null);
+                else if (appstest) view.evaluateJavascript("window.__selftestMode=true;window.__orbiteAppsTest&&window.__orbiteAppsTest()", null);
             }
 
             @Override
@@ -165,7 +176,10 @@ public class MainActivity extends FragmentActivity {
         if (selftest) runNativeSelftest();
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
-        else web.loadUrl(START_URL);
+        else {
+            clearSharedFiles();
+            web.loadUrl(START_URL);
+        }
 
         watchCalendar();
         handleIntent(getIntent());
@@ -217,6 +231,15 @@ public class MainActivity extends FragmentActivity {
                     else cm.setPrimaryClip(ClipData.newPlainText("", ""));
                 }
             }
+        } catch (Exception ignored) { }
+    }
+
+    /** Efface les copies temporaires des fichiers ouverts dans une autre application. */
+    private void clearSharedFiles() {
+        try {
+            File[] fs = new File(getCacheDir(), "partage").listFiles();
+            if (fs != null) for (File f : fs) //noinspection ResultOfMethodCallIgnored
+                f.delete();
         } catch (Exception ignored) { }
     }
 
@@ -391,6 +414,86 @@ public class MainActivity extends FragmentActivity {
         @JavascriptInterface
         public void bioDisable() {
             VaultBio.disable();
+        }
+
+        /** Applications du téléphone qu'on peut ouvrir : [{"pkg":"…","label":"…"}] (Orbite exclue). */
+        @JavascriptInterface
+        public String listApps() {
+            try {
+                PackageManager pm = getPackageManager();
+                Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+                List<ResolveInfo> found = pm.queryIntentActivities(main, 0);
+                Set<String> seen = new HashSet<>();
+                JSONArray arr = new JSONArray();
+                for (ResolveInfo ri : found) {
+                    if (ri.activityInfo == null) continue;
+                    String pkg = ri.activityInfo.packageName;
+                    if (pkg == null || pkg.equals(getPackageName()) || !seen.add(pkg)) continue;
+                    JSONObject o = new JSONObject();
+                    o.put("pkg", pkg);
+                    CharSequence label = ri.loadLabel(pm);
+                    o.put("label", label == null ? pkg : label.toString());
+                    arr.put(o);
+                }
+                return arr.toString();
+            } catch (Exception e) {
+                Log.w(TEST_TAG, "listApps " + e);
+                return "[]";
+            }
+        }
+
+        /** Icône d'une application, en image PNG (data URL) de 96 px. */
+        @JavascriptInterface
+        public String appIcon(String pkg) {
+            try {
+                Drawable d = getPackageManager().getApplicationIcon(pkg);
+                int size = 96;
+                Bitmap bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+                Canvas c = new Canvas(bmp);
+                d.setBounds(0, 0, size, size);
+                d.draw(c);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
+                bmp.recycle();
+                return "data:image/png;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        /** Ouvre une application du téléphone ; false si elle n'est plus installée. */
+        @JavascriptInterface
+        public boolean launchApp(String pkg) {
+            try {
+                final Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (i == null) return false;
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                runOnUiThread(() -> {
+                    try {
+                        startActivity(i);
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this, "Impossible d’ouvrir cette application", Toast.LENGTH_LONG).show();
+                    }
+                });
+                return true;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public void openPhoneSettings() {
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (Exception ignored) { }
+            });
+        }
+
+        /** Coffre verrouillé : les copies de fichiers ouvertes dans une autre application sont effacées. */
+        @JavascriptInterface
+        public void clearShared() {
+            clearSharedFiles();
         }
 
         /** Copie une clé ou un mot de passe du coffre (marqué « sensible », effacé au bout d'une minute). */

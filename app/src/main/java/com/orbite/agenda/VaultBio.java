@@ -244,7 +244,6 @@ final class VaultBio {
                 return "lockout";
             case BiometricPrompt.ERROR_NO_BIOMETRICS:
             case BiometricPrompt.ERROR_HW_NOT_PRESENT:
-            case BiometricPrompt.ERROR_HW_UNAVAILABLE:
             case BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL:
                 return "none";
             case BiometricPrompt.ERROR_TIMEOUT:

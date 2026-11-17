@@ -2,7 +2,8 @@
 # Test de bout en bout d'Orbite sur un téléphone Android virtuel.
 # 1. installe l'APK  2. crée un agenda de test  3. lance Orbite en mode test
 # 4. vérifie la lecture native de l'agenda, l'import, le stockage, le chiffrement et l'affichage
-# 5. vérifie le coffre (verrouillage sans perte de saisie) puis l'ouverture par empreinte digitale.
+# 5. vérifie le coffre (verrouillage sans perte de saisie, photos chiffrées), l'ouverture par empreinte digitale
+#    et les applications ouvertes depuis le coffre.
 set -u
 APK="${1:-Orbite.apk}"
 PKG=com.orbite.agenda
@@ -65,7 +66,7 @@ echo "$NATIVE_LINE" | grep -q "NATIVE ok=true" || fail "lecture de l'agenda du t
 echo "$JS_LINE" | grep -q '"recur":{"pass":true' || fail "calcul des dates répétées sur le téléphone ($JS_LINE)"
 echo "Dates répétées vérifiées sur le téléphone (changement d'heure, fin de mois, 29 février, dates supprimées)"
 echo "$JS_LINE" | grep -q '"vault":{"pass":true' || fail "coffre sur le téléphone ($JS_LINE)"
-echo "Coffre vérifié sur le téléphone : chiffrement, mauvais code refusé, verrou pendant une saisie sans perte, changement de code"
+echo "Coffre vérifié sur le téléphone : chiffrement, photos chiffrées à part, mauvais code refusé, verrou pendant une saisie sans perte, changement de code"
 echo "$JS_LINE" | grep -q '"pass":true' || fail "auto-test de l'interface ($JS_LINE)"
 if [ "$EXPECT" -gt 0 ]; then
   ADDED=$(echo "$JS_LINE" | grep -o '"added":[0-9]*' | head -n1 | cut -d: -f2)
@@ -202,6 +203,35 @@ else
   echo "Empreinte vérifiée sur le téléphone : activation, ouverture, clé protégée par le téléphone, délai de verrouillage"
 fi
 adb logcat -d -s "$TAG" | tr -d '\r' | grep -E "BIO_" | tail -n 12
+adb logcat -d | tr -d '\r' | grep -q "FATAL EXCEPTION" && fail "l'application s'est arrêtée brutalement (empreinte)"
+
+echo "== Coffre : applications choisies puis ouvertes depuis le coffre"
+adb shell am force-stop $PKG
+adb logcat -c
+adb shell am start -W -n $PKG/.MainActivity --ez orbite_appstest true >/dev/null || fail "lancement du test des applications"
+L=$(wait_for "JS APPS (LIST|FAIL)") || fail "le test des applications n'a pas démarré"
+echo "$L"
+echo "$L" | grep -q '"settings":true' || fail "liste des applications du téléphone ($L)"
+echo "$L" | grep -q '"picked":true' || fail "choix d'une application dans le coffre ($L)"
+echo "$L" | grep -q '"icon":true' || fail "icône de l'application ($L)"
+echo "$L" | grep -q '"kept":true' || fail "application du coffre perdue après verrouillage ($L)"
+echo "$L" | grep -q '"self":false' || fail "Orbite apparaît dans sa propre liste ($L)"
+echo "$L" | grep -q '"plain":false' || fail "liste des applications du coffre enregistrée en clair ($L)"
+L=$(wait_for "JS APPS (TILE|FAIL)") || fail "application absente du coffre"
+echo "$L"
+echo "$L" | grep -q '"shown":true' || fail "application absente de l'onglet Applications ($L)"
+wait_for "JS APPS (LAUNCHED|FAIL)" >/dev/null || fail "ouverture de l'application"
+TOP=""
+for i in $(seq 1 10); do
+  sleep 1
+  TOP=$(adb shell dumpsys activity activities | tr -d '\r' | grep -E "topResumedActivity|mResumedActivity|ResumedActivity" | head -n 3)
+  echo "$TOP" | grep -q "com.android.settings" && break
+done
+echo "$TOP"
+echo "$TOP" | grep -q "com.android.settings" || fail "l'application choisie ne s'est pas ouverte depuis le coffre ($TOP)"
+echo "Applications vérifiées : liste du téléphone, icônes, choix chiffré, ouverture depuis le coffre"
+adb shell am start -n $PKG/.MainActivity >/dev/null; sleep 2
+adb logcat -d | tr -d '\r' | grep -q "FATAL EXCEPTION" && fail "l'application s'est arrêtée brutalement (applications)"
 
 echo "== Erreurs éventuelles de l'interface"
 adb logcat -d -s ORBITE_JS | tr -d '\r' | grep -iE "error|uncaught" | tail -n 20

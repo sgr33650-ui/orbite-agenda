@@ -27,7 +27,8 @@ Dans l’éditeur, le champ **Répétition** propose : tous les jours, du lundi 
 Touchez le cadenas en haut de l’écran. À la création, choisissez un code de 4 à 8 chiffres : l’empreinte est proposée tout de suite, et le coffre s’ouvre ensuite en posant le doigt (le code reste valable).
 
 - **Événements privés** : créez-les dans le coffre, ou cochez « Ranger dans le coffre » dans un événement ; si le coffre est fermé, il s’ouvre sur place sans perdre la saisie.
-- **Clés et mots de passe** : clés de récupération des applications (codes de secours, plusieurs lignes) et mots de passe, avec Afficher, Copier (effacé du presse-papiers après 1 minute), Générer, Rechercher, Modifier, Supprimer.
+- **Clés et mots de passe** : clés de récupération des applications (codes de secours, plusieurs lignes) et mots de passe, avec Afficher, Copier (effacé du presse-papiers après 1 minute), Générer, Rechercher, Modifier, Supprimer. On peut y joindre des **photos (JPEG…) et des fichiers (PDF…)**, jusqu’à 25 Mo chacun, chiffrés un par un.
+- **Applications** : choisissez des applications du téléphone (banque, messagerie…) pour les ouvrir depuis le coffre, après l’empreinte. Elles restent aussi sur l’écran d’accueil ; pour les protéger elles aussi par empreinte sur un Xiaomi, cherchez « Verrouillage des applications » dans les Paramètres.
 - **Verrouillage** : après le délai choisi sans utilisation (1, 2, 5 ou 15 min), même si vous êtes passé sur une autre application. S’il se ferme pendant une saisie, celle-ci est conservée : déverrouillez et continuez.
 - Tout est chiffré sur le téléphone (AES-256). La clé du coffre est protégée par votre code et, pour l’empreinte, par le matériel sécurisé du téléphone (Android Keystore). Si les empreintes du téléphone changent, ouvrez avec votre code : l’empreinte vous sera reproposée.
 

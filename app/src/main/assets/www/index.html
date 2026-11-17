@@ -151,6 +151,19 @@ svg{display:block}
 .kc-sec{font-size:13.5px;line-height:1.5;padding:8px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--fg);letter-spacing:.04em;min-width:0}
 .kc-url{color:var(--mut);font-size:12px;overflow-wrap:anywhere}
 .kc .kc-notes{text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}
+#v-tabs button{flex:1 1 0;white-space:normal;line-height:1.25;padding:8px 6px}
+.kc-files{margin-top:2px}
+.app-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px}
+.app-t{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 6px 10px;border-radius:14px;background:var(--panel);border:1px solid var(--line);color:var(--fg);font-size:12px;line-height:1.25;min-width:0;cursor:pointer}
+.app-t img,.app-ph{width:46px;height:46px;border-radius:12px;flex:none}
+.app-ph{display:grid;place-items:center;background:var(--bg3);color:var(--ink);font-weight:600;font-size:18px}
+.app-t .app-n{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app-tip{margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.app-tip .hint{margin:0}
+.ap-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid var(--line);cursor:pointer;min-width:0}
+.ap-row img{width:36px;height:36px;border-radius:10px;flex:none;background:var(--bg3)}
+.ap-row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ap-row input{width:20px;height:20px;accent-color:var(--accent);flex:none;margin:0}
 .kc-act .btn{min-height:36px;padding:6px 12px;font-size:12.5px}
 .kc-act .btn svg{width:15px;height:15px}
 .kpw{display:flex;gap:6px;align-items:center}.kpw .inp{min-width:0;flex:1}
@@ -528,6 +541,8 @@ let VIS=[],DAYIDX=new Map();
 const DB={db:null,mem:{},
   async open(){try{if(!('indexedDB' in window))return;this.db=await Promise.race([new Promise((res,rej)=>{const r=indexedDB.open('orbite-agenda',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),2500))])}catch(e){this.db=null}},
   async get(k){if(!this.db)return this.mem[k];try{return await new Promise((res,rej)=>{const q=this.db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}catch(e){return this.mem[k]}},
+  async put(k,v){if(!this.db){this.mem[k]=v;return}await new Promise((res,rej)=>{const tx=this.db.transaction('kv','readwrite');tx.objectStore('kv').put(v,k);tx.oncomplete=res;tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('écriture annulée'))})},
+  async del(k){delete this.mem[k];if(!this.db)return;try{await new Promise((res,rej)=>{const tx=this.db.transaction('kv','readwrite');tx.objectStore('kv').delete(k);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)})}catch(e){}},
   async set(k,v){this.mem[k]=v;if(!this.db)return;try{await new Promise((res,rej)=>{const tx=this.db.transaction('kv','readwrite');tx.objectStore('kv').put(v,k);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)})}catch(e){toast('Enregistrement impossible : espace de stockage plein ?')}}
 };
 const saveEvents=()=>DB.set('events',S.events);
@@ -1452,13 +1467,14 @@ async function decBytes(key,box){return new Uint8Array(await crypto.subtle.decry
 const newMaster=()=>crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
 const importMaster=raw=>crypto.subtle.importKey('raw',raw,'AES-GCM',true,['encrypt','decrypt']);
 const rawOf=async k=>new Uint8Array(await crypto.subtle.exportKey('raw',k));
-S.keys=[];S.soft=false;S.vaultTab='events';
-async function saveVault(){if(!S.vaultKey||!S.vault)return;S.vault.box=await encJSON(S.vaultKey,{v:2,events:S.secure,keys:S.keys});S.vault.meta=S.secure.map(e=>({id:e.id,start:e.start,end:e.end,allDay:e.allDay,rec:e.rec||undefined}));await DB.set('vault',S.vault)}
+S.keys=[];S.apps=[];S.soft=false;S.vaultTab='events';
+async function saveVault(){if(!S.vaultKey||!S.vault)return;S.vault.box=await encJSON(S.vaultKey,{v:2,events:S.secure,keys:S.keys,apps:S.apps});S.vault.meta=S.secure.map(e=>({id:e.id,start:e.start,end:e.end,allDay:e.allDay,rec:e.rec||undefined}));await DB.set('vault',S.vault)}
 function updateVaultBtn(){const b=$('#vaultBtn');b.innerHTML=S.vaultKey?I.unlock:I.lock;b.classList.toggle('open',!!S.vaultKey);b.setAttribute('aria-label',S.vaultKey?'Coffre ouvert':'Coffre sécurisé')}
 function openWithData(key,data){
   S.vaultKey=key;
   S.secure=Array.isArray(data)?data:(data&&Array.isArray(data.events)?data.events:[]);
   S.keys=data&&!Array.isArray(data)&&Array.isArray(data.keys)?data.keys:[];
+  S.apps=data&&!Array.isArray(data)&&Array.isArray(data.apps)?data.apps:[];
   S.soft=false;lastAct=Date.now();updateVaultBtn();render();
 }
 async function createVault(pin){
@@ -1532,6 +1548,7 @@ function bioStatusText(){
   if(st.level>0)return 'Désactivée';
   if(st.reason==='none_enrolled')return 'Aucune empreinte enregistrée sur le téléphone : ajoutez-en une dans ses réglages (Mots de passe et sécurité › Empreinte digitale).';
   if(st.reason==='no_hardware')return 'Ce téléphone n’a pas de capteur d’empreinte compatible.';
+  if(st.reason==='update')return 'Le téléphone demande une mise à jour de sécurité pour utiliser l’empreinte (Paramètres › À propos du téléphone › Mise à jour).';
   return NATIVE?'Empreinte indisponible pour le moment.':'Utilise Windows Hello ou le capteur de l’appareil, s’il y en a un.';
 }
 
@@ -1545,13 +1562,14 @@ function checkAutoLock(){if(S.vaultKey&&!S.soft&&Date.now()-lastAct>S.settings.a
 setInterval(checkAutoLock,5000);
 let pendingAutoBio=null;   // l'empreinte ne se lance que quand Orbite est à l'écran
 document.addEventListener('visibilitychange',()=>{if(document.hidden){maskSecrets();return}checkAutoLock();if(pendingAutoBio){const f=pendingAutoBio;pendingAutoBio=null;setTimeout(f,400)}});
-const vaultSheetOpen=()=>['vault','secure','secdetail','key'].includes(S.sheetKind)||isVaultEditing();
+const vaultSheetOpen=()=>['vault','secure','secdetail','key','apps'].includes(S.sheetKind)||isVaultEditing();
 function lockVault(auto){
   if(!S.vaultKey)return;
   if(auto&&isVaultEditing()){if(!S.soft)softLock();return}
   if(vaultSheetOpen()&&!$('#lightbox').hidden)closeLightbox();
-  S.vaultKey=null;S.secure=[];S.keys=[];S.soft=false;updateVaultBtn();
-  if(['vault','secure','secdetail','key'].includes(S.sheetKind))closeSheet();
+  S.vaultKey=null;S.secure=[];S.keys=[];S.apps=[];S.soft=false;updateVaultBtn();revokeUrls();
+  try{if(NATIVE)OrbiteNative.clearShared()}catch(e){}   // copies ouvertes dans une autre application
+  if(['vault','secure','secdetail','key','apps'].includes(S.sheetKind))closeSheet();
   if(gateRes)gateDone(false);
   render();toast(auto?'Coffre verrouillé automatiquement':'Coffre verrouillé');
 }
@@ -1659,10 +1677,41 @@ function genPassword(n=20){
   for(let i=p.length-1;i>0;i--){const j=rndInt(i+1);[p[i],p[j]]=[p[j],p[i]]}
   return p.join('');
 }
+
+/* ---- photos et fichiers du coffre : chacun chiffré avec la clé du coffre et rangé à part,
+   pour que le coffre reste rapide même avec beaucoup de photos ---- */
+const VF_MAX=25*1024*1024;
+async function vfPut(id,bytes){const iv=rand(12),ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},S.vaultKey,bytes));await DB.put('vf:'+id,{iv,ct})}
+async function vfGet(id){const r=await DB.get('vf:'+id);if(!r||!r.ct)throw new Error('fichier introuvable');return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:r.iv},S.vaultKey,r.ct))}
+const vfDel=id=>DB.del('vf:'+id);
+const readBytes=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(new Uint8Array(r.result));r.onerror=()=>rej(r.error);r.readAsArrayBuffer(f)});
+const fileWord=n=>n+(n>1?' fichiers':' fichier');
+const urlPools={list:[],edit:[]};
+function blobUrl(pool,bytes,type){const u=URL.createObjectURL(new Blob([bytes],{type:type||'application/octet-stream'}));urlPools[pool].push(u);return u}
+function revokeUrls(pool){(pool?[pool]:Object.keys(urlPools)).forEach(p=>{urlPools[p].forEach(u=>{try{URL.revokeObjectURL(u)}catch(e){}});urlPools[p]=[]})}
+function vfTile(a,removable){
+  const ext=(String(a.name).split('.').pop()||'').slice(0,4).toUpperCase(),img=String(a.type||'').startsWith('image/');
+  return `<div class="att" role="button" tabindex="0" data-vf="${esc(a.id)}" title="${esc(a.name)}"><span class="ext">${esc(ext||'FICH')}</span><span class="nm">${esc(a.name)}</span><span>${sz(a.size)}</span>${img?`<img alt="${esc(a.name)}" data-vimg="${esc(a.id)}" hidden>`:''}${removable?`<button type="button" class="rm" data-vrm="${esc(a.id)}" aria-label="Retirer ${esc(a.name)}">${I.close}</button>`:''}</div>`;
+}
+async function fillThumbs(box,files,pending,pool){
+  for(const a of files){
+    const im=box.querySelector(`[data-vimg="${CSS.escape(a.id)}"]`);if(!im)continue;
+    try{const b=pending&&pending[a.id]||await vfGet(a.id);if(!box.contains(im))return;im.src=blobUrl(pool,b,a.type);im.hidden=false}catch(e){}
+  }
+}
+async function openVaultFile(a,pending){
+  try{const b=pending&&pending[a.id]||await vfGet(a.id),type=a.type||'application/octet-stream';
+    openAtt({id:a.id,name:a.name,type,size:a.size,data:`data:${type};base64,${b64(b)}`})}
+  catch(e){toast('Fichier illisible')}
+}
+
 function maskSecrets(){
   document.querySelectorAll('.kc-sec.shown').forEach(el=>{el.textContent=MASK;el.classList.remove('shown')});
   document.querySelectorAll('[data-show] span').forEach(sp=>{sp.textContent='Afficher'});
   document.querySelectorAll('.kc-notes').forEach(n=>{n.textContent='';n.hidden=true});
+  document.querySelectorAll('.kc-files').forEach(n=>{n.innerHTML='';n.hidden=true});
+  revokeUrls('list');
+  if(vaultSheetOpen()&&!$('#lightbox').hidden)closeLightbox();   // photo du coffre affichée en grand
   const pw=$('#k-pw');if(pw&&pw.type==='text'){pw.type='password';const eye=$('#k-eye');if(eye)eye.innerHTML=I.eye}
 }
 function copySecret(text,msg){
@@ -1671,31 +1720,37 @@ function copySecret(text,msg){
   else toast('Copie indisponible : touchez « Afficher » puis sélectionnez le texte');
 }
 function keyListHtml(q){
-  if(!S.keys.length)return '<div class="empty">Rangez ici les clés de récupération de vos applications (codes de secours, phrases de récupération) et vos mots de passe. Tout est chiffré sur ce téléphone.</div>';
+  if(!S.keys.length)return '<div class="empty">Rangez ici les clés de récupération de vos applications (codes de secours, phrases de récupération, photos de ces codes) et vos mots de passe. Tout est chiffré sur ce téléphone.</div>';
   const t=String(q||'').trim().toLowerCase();
   const list=S.keys.filter(k=>!t||`${k.name} ${k.user||''} ${k.url||''}`.toLowerCase().includes(t)).sort((a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}));
   if(!list.length)return '<div class="empty">Aucun résultat.</div>';
-  return list.map(k=>`<div class="kc" data-k="${esc(k.id)}">
-    <div class="kc-top"><span class="kc-ic">${k.type==='key'?I.key:I.lock}</span><div class="kc-t"><b>${esc(k.name)}</b><small>${k.type==='key'?'Clé de récupération':'Mot de passe'}${k.user?' · '+esc(k.user):''}</small></div></div>
-    <div class="kc-sec mono" data-sec="${esc(k.id)}">${MASK}</div>
-    ${k.url?`<small class="kc-url">${esc(k.url)}</small>`:''}${k.notes?'<p class="hint kc-notes" hidden></p>':''}
-    <div class="row kc-act"><button type="button" class="btn ghost" data-show="${esc(k.id)}">${I.eye}<span>Afficher</span></button><button type="button" class="btn ghost" data-copy="${esc(k.id)}">${I.copy}<span>Copier</span></button><button type="button" class="btn ghost" data-kedit="${esc(k.id)}">${I.edit}<span>Modifier</span></button></div>
-  </div>`).join('');
+  return list.map(k=>{const nf=(k.files||[]).length,id=esc(k.id);return `<div class="kc" data-k="${id}">
+    <div class="kc-top"><span class="kc-ic">${k.type==='key'?I.key:I.lock}</span><div class="kc-t"><b>${esc(k.name)}</b><small>${k.type==='key'?'Clé de récupération':'Mot de passe'}${k.user?' · '+esc(k.user):''}${nf?' · '+fileWord(nf):''}</small></div></div>
+    ${k.secret?`<div class="kc-sec mono" data-sec="${id}">${MASK}</div>`:''}
+    ${k.url?`<small class="kc-url">${esc(k.url)}</small>`:''}${k.notes?'<p class="hint kc-notes" hidden></p>':''}${nf?'<div class="atts kc-files" hidden></div>':''}
+    <div class="row kc-act">${k.secret||k.notes||nf?`<button type="button" class="btn ghost" data-show="${id}">${I.eye}<span>Afficher</span></button>`:''}${k.secret?`<button type="button" class="btn ghost" data-copy="${id}">${I.copy}<span>Copier</span></button>`:''}<button type="button" class="btn ghost" data-kedit="${id}">${I.edit}<span>Modifier</span></button></div>
+  </div>`}).join('');
 }
 function keyAction(e){
-  const b=e.target.closest('[data-show],[data-copy],[data-kedit]');if(!b)return;
-  const id=b.dataset.show||b.dataset.copy||b.dataset.kedit,k=S.keys.find(x=>x.id===id);if(!k)return;
+  const b=e.target.closest('[data-show],[data-copy],[data-kedit],[data-vf]');if(!b)return;
+  const card=b.closest('.kc'),k=card&&S.keys.find(x=>x.id===card.dataset.k);if(!k)return;
+  if(b.dataset.vf){const a=(k.files||[]).find(x=>x.id===b.dataset.vf);if(a)openVaultFile(a,null);return}
   if(b.dataset.show){
-    const c=b.closest('.kc'),el=c.querySelector('.kc-sec'),shown=el.classList.toggle('shown'),nt=c.querySelector('.kc-notes');
-    el.textContent=shown?k.secret:MASK;b.querySelector('span').textContent=shown?'Masquer':'Afficher';
+    const lab=b.querySelector('span'),shown=lab.textContent==='Afficher';
+    const el=card.querySelector('.kc-sec'),nt=card.querySelector('.kc-notes'),fl=card.querySelector('.kc-files');
+    lab.textContent=shown?'Masquer':'Afficher';
+    if(el){el.textContent=shown?k.secret:MASK;el.classList.toggle('shown',shown)}
     if(nt){nt.textContent=shown?'Notes : '+(k.notes||''):'';nt.hidden=!shown}
+    if(fl){if(shown){fl.innerHTML=(k.files||[]).map(a=>vfTile(a,false)).join('');fl.hidden=false;fillThumbs(fl,k.files||[],null,'list')}else{fl.innerHTML='';fl.hidden=true}}
   }else if(b.dataset.copy)copySecret(k.secret,k.type==='key'?'Clé copiée':'Mot de passe copié');
-  else openKeyEditor(id);
+  else openKeyEditor(k.id);
 }
 function openKeyEditor(id){
   if(!S.vaultKey){openVault();return}
   const k=id?S.keys.find(x=>x.id===id):null;
-  const d=k?{...k}:{id:uid(),type:'password',name:'',user:'',secret:'',url:'',notes:''};
+  const d=k?{...k,files:(k.files||[]).map(x=>({...x}))}:{id:uid(),type:'password',name:'',user:'',secret:'',url:'',notes:'',files:[]};
+  const pending={};   // photos et fichiers ajoutés : gardés en mémoire jusqu'à « Enregistrer »
+  revokeUrls('edit');
   openSheet(`<header class="sh-h"><h2>${k?'Modifier':'Nouvelle clé ou mot de passe'}</h2><button type="button" class="ib" id="k-x" aria-label="Revenir au coffre">${I.close}</button></header>
   <form class="form" id="kForm" novalidate>
     <div class="seg" id="k-type" role="group" aria-label="Type"><button type="button" data-val="password">Mot de passe</button><button type="button" data-val="key">Clé de récupération</button></div>
@@ -1705,6 +1760,10 @@ function openKeyEditor(id){
       <div class="kpw" id="k-pw-w"><input class="inp mono" id="k-pw" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Mot de passe"><button type="button" class="ib" id="k-eye" aria-label="Afficher le mot de passe">${I.eye}</button></div>
       <textarea class="inp mono" id="k-codes" rows="5" placeholder="Collez ici la clé ou les codes de récupération (un par ligne)" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Clé ou codes de récupération" hidden></textarea>
       <div class="row" id="k-gen-w"><button type="button" class="btn ghost" id="k-gen">${I.key}Générer un mot de passe sûr</button></div>
+    </div>
+    <div class="fld"><span>Photos et fichiers (facultatif)</span>
+      <div class="atts" id="k-atts"></div>
+      <label class="btn ghost filebtn">${I.clip}Ajouter une photo ou un fichier<input type="file" id="k-file" multiple hidden></label>
     </div>
     <label class="fld"><span>Adresse du site (facultatif)</span><input class="inp" id="k-url" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://"></label>
     <label class="fld"><span>Notes (facultatif)</span><textarea id="k-notes" rows="2" placeholder="Question secrète, date de création…"></textarea></label>
@@ -1722,20 +1781,80 @@ function openKeyEditor(id){
     f('type').onclick=e=>{const b=e.target.closest('[data-val]');if(b)setType(b.dataset.val)};
     f('eye').onclick=()=>{const p=f('pw'),show=p.type==='password';p.type=show?'text':'password';f('eye').innerHTML=show?I.eyeOff:I.eye;f('eye').setAttribute('aria-label',show?'Masquer le mot de passe':'Afficher le mot de passe')};
     f('gen').onclick=()=>{d.secret=genPassword(20);f('pw').value=d.secret;f('pw').type='text';f('eye').innerHTML=I.eyeOff;toast('Mot de passe généré : enregistrez-le aussi dans l’application concernée',4500)};
+    const drawFiles=()=>{const box=f('atts');if(!box)return;box.innerHTML=d.files.map(a=>vfTile(a,true)).join('');fillThumbs(box,d.files,pending,'edit')};
+    drawFiles();
+    f('file').onchange=async e=>{
+      const list=[...(e.target.files||[])];e.target.value='';
+      for(const file of list){
+        if(file.size>VF_MAX){toast(`« ${file.name} » dépasse 25 Mo`);continue}
+        try{const fid=uid();pending[fid]=await readBytes(file);d.files.push({id:fid,name:file.name||'fichier',type:file.type||'application/octet-stream',size:file.size})}
+        catch(x){toast(`Lecture impossible : ${file.name}`)}
+      }
+      drawFiles();
+    };
+    f('atts').onclick=e=>{
+      const rm=e.target.closest('[data-vrm]');if(rm){const fid=rm.dataset.vrm;d.files=d.files.filter(a=>a.id!==fid);delete pending[fid];drawFiles();return}
+      const t=e.target.closest('[data-vf]');if(t){const a=d.files.find(x=>x.id===t.dataset.vf);if(a)openVaultFile(a,pending)}
+    };
     const back=()=>vaultList('keys');
     f('cancel').onclick=back;f('x').onclick=back;
-    if(f('del'))f('del').onclick=async()=>{if(!await askConfirm(`Supprimer « ${d.name} » du coffre ? Cette action est définitive.`,'Supprimer'))return;S.keys=S.keys.filter(x=>x.id!==d.id);await saveVault();toast('Supprimé du coffre');back()};
+    if(f('del'))f('del').onclick=async()=>{if(!await askConfirm(`Supprimer « ${d.name} » du coffre, avec ses photos et fichiers ? Cette action est définitive.`,'Supprimer'))return;
+      S.keys=S.keys.filter(x=>x.id!==d.id);await saveVault();for(const a of k.files||[])await vfDel(a.id);toast('Supprimé du coffre');back()};
     sh.querySelector('#kForm').onsubmit=async e=>{
       e.preventDefault();
       const name=f('name').value.trim();if(!name){f('name').focus();toast('Indiquez l’application ou le site');return}
       const secret=d.type==='key'?f('codes').value.trim():f('pw').value;
-      if(!secret.trim()){toast(d.type==='key'?'Collez la clé de récupération':'Saisissez le mot de passe');return}
+      if(!secret.trim()&&!d.files.length){toast(d.type==='key'?'Collez la clé de récupération ou ajoutez une photo':'Saisissez le mot de passe ou ajoutez une photo');return}
       if((!S.vaultKey||S.soft)&&!(await vaultGate()))return;
-      const now=Date.now(),item={id:d.id,type:d.type,name,user:f('user').value.trim(),secret,url:f('url').value.trim(),notes:f('notes').value.trim(),created:k&&k.created||now,updated:now};
+      try{for(const a of d.files)if(pending[a.id]){await vfPut(a.id,pending[a.id]);delete pending[a.id]}}
+      catch(x){toast('Enregistrement impossible : espace de stockage plein ?',4500);return}
+      const now=Date.now(),item={id:d.id,type:d.type,name,user:f('user').value.trim(),secret,url:f('url').value.trim(),notes:f('notes').value.trim(),
+        files:d.files.map(({id,name,type,size})=>({id,name,type,size})),created:k&&k.created||now,updated:now};
       const i=S.keys.findIndex(x=>x.id===item.id);if(i<0)S.keys.push(item);else S.keys[i]=item;
-      await saveVault();play(S.settings.sound);toast('Enregistré dans le coffre');back();
+      await saveVault();
+      for(const a of k&&k.files||[])if(!item.files.some(x=>x.id===a.id))await vfDel(a.id);   // fichiers retirés
+      play(S.settings.sound);toast('Enregistré dans le coffre');back();
     };
     if(!k&&matchMedia('(pointer:fine)').matches)setTimeout(()=>{const el=f('name');if(el&&(document.activeElement===sh||!sh.contains(document.activeElement)))el.focus()},60);
+  });
+}
+
+/* ---- applications ouvertes depuis le coffre (téléphone) ---- */
+const appIcons=new Map();let pickerTok=0;
+function appIcon(pkg){if(appIcons.has(pkg))return appIcons.get(pkg);let u='';try{u=OrbiteNative.appIcon(pkg)||''}catch(e){}appIcons.set(pkg,u);return u}
+function appsHtml(){
+  if(!S.apps.length)return '<div class="empty">Choisissez les applications à ouvrir depuis le coffre (banque, messagerie, photos…) : elles s’ouvriront après votre empreinte ou votre code.</div>';
+  return `<div class="app-grid">${S.apps.map(a=>`<button type="button" class="app-t" data-app="${esc(a.pkg)}" aria-label="Ouvrir ${esc(a.label)}">${a.icon?`<img src="${esc(a.icon)}" alt="">`:`<span class="app-ph">${esc(String(a.label||'?').slice(0,1).toUpperCase())}</span>`}<span class="app-n">${esc(a.label)}</span></button>`).join('')}</div>`;
+}
+function launchVaultApp(pkg){
+  let ok=false;try{ok=OrbiteNative.launchApp(pkg)}catch(e){}
+  if(!ok)toast('Application introuvable : elle a peut-être été désinstallée. Retirez-la avec « Choisir les applications ».',5000);
+}
+function openAppPicker(){
+  if(!S.vaultKey){openVault();return}
+  let list=[];try{list=JSON.parse(OrbiteNative.listApps())||[]}catch(e){}
+  list.sort((a,b)=>String(a.label).localeCompare(String(b.label),'fr',{sensitivity:'base'}));
+  const chosen=new Set(S.apps.map(a=>a.pkg)),tok=++pickerTok;
+  openSheet(`<header class="sh-h"><h2>Applications du coffre</h2><button type="button" class="ib" id="ap-x" aria-label="Revenir au coffre">${I.close}</button></header>
+  <p class="hint" style="margin:0 0 12px">Cochez les applications à ouvrir depuis le coffre.</p>
+  <input class="inp" id="ap-q" type="search" placeholder="Rechercher une application" autocomplete="off" aria-label="Rechercher une application" style="margin-bottom:6px">
+  <div id="ap-list">${list.length?list.map(a=>`<label class="ap-row" data-name="${esc(String(a.label).toLowerCase())}"><input type="checkbox" value="${esc(a.pkg)}" ${chosen.has(a.pkg)?'checked':''}><img alt="" data-pkg="${esc(a.pkg)}"><span>${esc(a.label)}</span></label>`).join(''):'<div class="empty">Aucune application trouvée sur ce téléphone.</div>'}</div>
+  <footer class="sh-f"><span class="sp"></span><button type="button" class="btn ghost" id="ap-cancel">Annuler</button><button type="button" class="btn pri" id="ap-ok">Valider</button></footer>`,'apps',sh=>{
+    const back=()=>vaultList('apps');
+    sh.querySelector('#ap-x').onclick=back;sh.querySelector('#ap-cancel').onclick=back;
+    const q=sh.querySelector('#ap-q');
+    q.oninput=()=>{const t=q.value.trim().toLowerCase();sh.querySelectorAll('.ap-row').forEach(r=>{r.hidden=!!t&&!r.dataset.name.includes(t)})};
+    const imgs=[...sh.querySelectorAll('img[data-pkg]')];let i=0;   // icônes chargées peu à peu : l'écran reste fluide
+    const step=()=>{if(tok!==pickerTok||S.sheetKind!=='apps')return;for(let n=0;n<6&&i<imgs.length;n++,i++){const u=appIcon(imgs[i].dataset.pkg);if(u)imgs[i].src=u}if(i<imgs.length)setTimeout(step,16)};
+    setTimeout(step,0);
+    sh.querySelector('#ap-ok').onclick=async()=>{
+      const picked=[...sh.querySelectorAll('.ap-row input:checked')].map(x=>x.value);
+      if((!S.vaultKey||S.soft)&&!(await vaultGate()))return;
+      const byPkg=new Map(list.map(a=>[a.pkg,a])),old=new Map(S.apps.map(a=>[a.pkg,a]));
+      S.apps=picked.map(p=>{const a=byPkg.get(p)||old.get(p)||{label:p};return{pkg:p,label:String(a.label||p),icon:appIcon(p)||(old.get(p)||{}).icon||''}})
+        .sort((a,b)=>a.label.localeCompare(b.label,'fr',{sensitivity:'base'}));
+      await saveVault();toast(S.apps.length?'Applications du coffre enregistrées':'Aucune application dans le coffre');back();
+    };
   });
 }
 
@@ -1743,12 +1862,18 @@ function openKeyEditor(id){
 function vaultList(tab){
   if(!S.vaultKey){openVault();return}
   if(tab)S.vaultTab=tab;
-  const keys=S.vaultTab==='keys',list=S.secure.slice().sort(sortEv),st=bioStatus();
+  if(S.vaultTab==='apps'&&!NATIVE)S.vaultTab='events';
+  const cur=S.vaultTab,list=S.secure.slice().sort(sortEv),st=bioStatus();
+  const tb=(v,l)=>`<button type="button" role="tab" data-val="${v}" aria-pressed="${cur===v}" aria-selected="${cur===v}">${l}</button>`;
+  revokeUrls('list');
   openSheet(`<header class="sh-h"><h2>Coffre ouvert</h2><span class="pill ok">Chiffré</span><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
-  <div class="seg" id="v-tabs" role="tablist" aria-label="Contenu du coffre"><button type="button" role="tab" data-val="events" aria-pressed="${!keys}" aria-selected="${!keys}">Événements privés</button><button type="button" role="tab" data-val="keys" aria-pressed="${keys}" aria-selected="${keys}">Clés et mots de passe</button></div>
-  ${keys?`<div class="row" style="margin:14px 0"><button class="btn pri" id="k-new">${I.plus}Ajouter une clé ou un mot de passe</button></div>
+  <div class="seg" id="v-tabs" role="tablist" aria-label="Contenu du coffre">${tb('events','Événements privés')}${tb('keys','Clés et mots de passe')}${NATIVE?tb('apps','Applications'):''}</div>
+  ${cur==='keys'?`<div class="row" style="margin:14px 0"><button class="btn pri" id="k-new">${I.plus}Ajouter une clé ou un mot de passe</button></div>
     ${S.keys.length>4?'<input class="inp" id="k-search" type="search" placeholder="Rechercher une application ou un site" autocomplete="off" aria-label="Rechercher" style="margin-bottom:10px">':''}
     <div class="kc-list" id="k-list">${keyListHtml('')}</div>`
+  :cur==='apps'?`<div class="row" style="margin:14px 0"><button class="btn pri" id="a-pick">${I.plus}Choisir les applications</button></div>
+    <div id="a-list">${appsHtml()}</div>
+    <div class="app-tip"><p class="hint">Ces applications restent aussi sur l’écran d’accueil. Pour les protéger elles aussi par empreinte (et les masquer si votre téléphone le propose), ouvrez les Paramètres et cherchez « Verrouillage des applications ».</p><button type="button" class="btn ghost" id="a-settings">Ouvrir les Paramètres du téléphone</button></div>`
   :`<div class="row" style="margin:14px 0"><button class="btn pri" id="v-new">${I.plus}Nouvel événement privé</button></div>
     <div class="ag-list" id="v-list" style="margin-bottom:8px">${list.length?list.map(e=>card(e).replace(/<span class="t mono">/,`<span class="t mono">${range(e)[0].getDate()} ${esc(mShort(range(e)[0]))}<br>`)).join(''):'<div class="empty">Aucun événement privé pour l’instant. Créez-en un ici, ou activez « Ranger dans le coffre » dans un événement.</div>'}</div>`}
   <div class="row" style="margin-top:14px"><button class="btn ghost" id="v-lock">${I.lock}Verrouiller le coffre</button></div>
@@ -1765,7 +1890,10 @@ function vaultList(tab){
     const vl=sh.querySelector('#v-list');if(vl)vl.onclick=e=>{const s=e.target.closest('[data-share]');if(s){quickShare(s.dataset.share);return}const c=e.target.closest('[data-id]');if(c)openDetail(c.dataset.id)};
     const kn=sh.querySelector('#k-new');if(kn)kn.onclick=()=>openKeyEditor(null);
     const kl=sh.querySelector('#k-list');if(kl)kl.onclick=keyAction;
-    const ks=sh.querySelector('#k-search');if(ks)ks.oninput=()=>{kl.innerHTML=keyListHtml(ks.value)};
+    const ks=sh.querySelector('#k-search');if(ks)ks.oninput=()=>{revokeUrls('list');kl.innerHTML=keyListHtml(ks.value)};
+    const ap=sh.querySelector('#a-pick');if(ap)ap.onclick=openAppPicker;
+    const al=sh.querySelector('#a-list');if(al)al.onclick=e=>{const b=e.target.closest('[data-app]');if(b)launchVaultApp(b.dataset.app)};
+    const as=sh.querySelector('#a-settings');if(as)as.onclick=()=>{try{OrbiteNative.openPhoneSettings()}catch(e){toast('Ouvrez les Paramètres du téléphone')}};
     sh.querySelector('#v-lock').onclick=()=>lockVault(false);
     sh.querySelector('#v-auto').onchange=e=>{S.settings.autoLock=+e.target.value;saveSettings()};
     const bt=sh.querySelector('#v-bio-t'),bs=sh.querySelector('#v-bio-s');
@@ -1866,7 +1994,7 @@ window.__back=()=>{
   if(!$('#lightbox').hidden){closeLightbox();return true}
   if(!$('#choiceWrap').hidden){$('#choiceWrap .btn[data-cancel]').click();return true}
   if(!$('#confirmWrap').hidden){const c=$('#confirmWrap [data-cancel].btn');if(c)c.click();return true}
-  if(!$('#sheetWrap').hidden){if(S.sheetKind==='key')vaultList('keys');else closeSheet();return true}
+  if(!$('#sheetWrap').hidden){if(S.sheetKind==='key')vaultList('keys');else if(S.sheetKind==='apps')vaultList('apps');else closeSheet();return true}
   if(S.view==='day'){S.view='month';render();return true}
   return false;
 };
@@ -2226,11 +2354,14 @@ async function vaultSelfCheck(){
   try{
     S.settings.bioAsked=true;
     if(!S.vault)await createVault('2468');else if(!S.vaultKey)await unlockWithPin('2468');
-    S.secure=S.secure.filter(e=>e.title!=='Test privé'&&e.title!=='Brouillon coffre');S.keys=S.keys.filter(k=>k.name!=='Test clé');
+    S.secure=S.secure.filter(e=>e.title!=='Test privé'&&e.title!=='Brouillon coffre');for(const k of S.keys.filter(k=>k.name==='Test fichier'))for(const a of k.files||[])await vfDel(a.id);S.keys=S.keys.filter(k=>k.name!=='Test clé'&&k.name!=='Test fichier');
     S.secure.push({id:uid(),title:'Test privé',allDay:false,start:'2026-12-03T09:00',end:'2026-12-03T10:00',color:'#8693AD',attachments:[],rec:normRec({freq:'week',days:[4]},'2026-12-03')});
     S.keys.push({id:uid(),type:'key',name:'Test clé',user:'moi',secret:'SECRET-TEST-7788\nCODE-2',url:'',notes:''});
     await saveVault();
     chk(!JSON.stringify(await DB.get('vault')).includes('SECRET-TEST-7788'),'clé visible en clair dans le stockage');
+    const fid=uid(),fb=new Uint8Array([137,80,78,71,13,10,26,10,1,2,3,4,5,6,7,8]);
+    await vfPut(fid,fb);S.keys.push({id:uid(),type:'key',name:'Test fichier',user:'',secret:'',url:'',notes:'',files:[{id:fid,name:'codes.png',type:'image/png',size:fb.length}]});await saveVault();
+    const frec=await DB.get('vf:'+fid);chk(frec&&frec.ct&&frec.ct.length===fb.length+16&&!(frec.ct[0]===137&&frec.ct[1]===80),'photo du coffre non chiffrée');
     lockVault(false);chk(!S.vaultKey&&!S.keys.length,'verrouillage');
     let wrong=false;try{await unlockWithPin('0000')}catch(e){wrong=true}chk(wrong&&!S.vaultKey,'mauvais code accepté');
     await unlockWithPin('2468');
@@ -2248,6 +2379,7 @@ async function vaultSelfCheck(){
     await changePin('1357');lockVault(false);
     let old=false;try{await unlockWithPin('2468')}catch(e){old=true}chk(old,'ancien code encore accepté');
     await unlockWithPin('1357');chk(S.keys.some(k=>k.name==='Test clé'),'code changé : données perdues');
+    {const back=await vfGet(fid);chk(back.length===fb.length&&back.every((x,i)=>x===fb[i]),'photo du coffre illisible après changement de code')}
     await changePin('2468');
     lockVault(false);
   }catch(e){fails.push('erreur : '+String(e&&e.message||e))}
@@ -2278,6 +2410,32 @@ window.__orbiteBioTest=async()=>{
     };
     rep('READY',{});
   }catch(e){rep('FAIL',{code:e&&e.code||'',msg:String(e&&e.message||e)})}
+};
+
+/* Test des applications du coffre sur le téléphone virtuel : liste, icône, choix, ouverture. */
+window.__orbiteAppsTest=async()=>{
+  const rep=(tag,o)=>{try{OrbiteNative.selftestResult('APPS '+tag+' '+JSON.stringify(o||{}))}catch(e){}};
+  const wait=async c=>{for(let i=0;i<80&&!c();i++)await new Promise(r=>setTimeout(r,100));return c()};
+  try{
+    await READY;
+    const list=JSON.parse(OrbiteNative.listApps()||'[]'),st=list.find(a=>a.pkg==='com.android.settings');
+    if(!S.vault)await createVault('2468');else if(!S.vaultKey)await unlockWithPin('2468');
+    vaultList('apps');openAppPicker();await wait(()=>!!document.querySelector('#ap-list img[src]'));
+    const box=document.querySelector('#ap-list input[value="com.android.settings"]');
+    if(box&&!box.checked)box.click();
+    document.querySelector('#ap-ok').click();
+    await wait(()=>S.sheetKind==='vault'&&S.apps.length>0);
+    const icon=(S.apps.find(a=>a.pkg==='com.android.settings')||{}).icon||'';
+    lockVault(false);await unlockWithPin('2468');
+    rep('LIST',{count:list.length,settings:!!st,picked:!!box,icon:icon.startsWith('data:image/png;base64,')&&icon.length>200,
+      kept:S.apps.some(a=>a.pkg==='com.android.settings'&&a.icon===icon),self:list.some(a=>a.pkg==='com.orbite.agenda'),
+      plain:JSON.stringify(await DB.get('vault')).includes('com.android.settings')});
+    vaultList('apps');await new Promise(r=>setTimeout(r,300));
+    const b=document.querySelector('[data-app="com.android.settings"]');
+    rep('TILE',{shown:!!b});
+    if(b)b.click();
+    rep('LAUNCHED',{});
+  }catch(e){rep('FAIL',{msg:String(e&&e.message||e)})}
 };
 
 /* ---------- auto-test (lancé uniquement par le test automatique) ---------- */

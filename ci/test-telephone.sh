@@ -59,6 +59,8 @@ NATIVE_LINE=$(echo "$RES" | grep "NATIVE" | tail -n1)
 JS_LINE=$(echo "$RES" | grep " JS RESULT " | tail -n1)
 echo "$NATIVE_LINE" | grep -q "NATIVE ok=true" || fail "lecture de l'agenda du téléphone ($NATIVE_LINE)"
 [ -n "$JS_LINE" ] || fail "l'interface n'a pas répondu au test"
+echo "$JS_LINE" | grep -q '"recur":{"pass":true' || fail "calcul des dates répétées sur le téléphone ($JS_LINE)"
+echo "Dates répétées vérifiées sur le téléphone (changement d'heure, fin de mois, 29 février, dates supprimées)"
 echo "$JS_LINE" | grep -q '"pass":true' || fail "auto-test de l'interface ($JS_LINE)"
 if [ "$EXPECT" -gt 0 ]; then
   ADDED=$(echo "$JS_LINE" | grep -o '"added":[0-9]*' | head -n1 | cut -d: -f2)
@@ -123,6 +125,25 @@ adb shell "am start -a android.intent.action.SEND -t text/calendar -n $PKG/.Main
 L=$(wait_for 'JS ICS .*"action":"annulation"') || fail "annulation non traitée"
 echo "$L"
 echo "$L" | grep -q '"count":1' || fail "le rendez-vous annulé n'a pas été retiré ($L)"
+
+echo "== Invitation répétée reçue par mail (tous les jeudis, 4 fois)"
+REC="BEGIN:VCALENDAR
+VERSION:2.0
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:test-serie-7@orbite
+DTSTART:20261203T150000Z
+DTEND:20261203T160000Z
+RRULE:FREQ=WEEKLY;BYDAY=TH;COUNT=4
+SUMMARY:SerieICS
+END:VEVENT
+END:VCALENDAR"
+adb shell "am start -a android.intent.action.SEND -t text/calendar -n $PKG/.MainActivity --es android.intent.extra.TEXT '$REC'" >/dev/null
+L=$(wait_for 'JS ICS .*SerieICS') || fail "invitation répétée non traitée"
+echo "$L"
+echo "$L" | grep -q '"rec":"week"' || fail "répétition de l'invitation non reconnue ($L)"
+echo "$L" | grep -q '"occ":4' || fail "nombre de dates de l'invitation répétée incorrect ($L)"
+echo "Invitation répétée vérifiée : 4 jeudis"
 
 echo "== Erreurs éventuelles de l'interface"
 adb logcat -d -s ORBITE_JS | tr -d '\r' | grep -iE "error|uncaught" | tail -n 20

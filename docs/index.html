@@ -122,6 +122,18 @@ svg{display:block}
 .btn.danger:hover{background:color-mix(in srgb,var(--danger) 12%,transparent)}
 .btn:disabled{opacity:.5;cursor:default;box-shadow:none}
 .cal-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c);margin-right:8px;vertical-align:1px;box-shadow:0 0 calc(6px * var(--glow)) var(--c)}
+.rep-box{display:flex;flex-direction:column;gap:12px;padding:14px;border-radius:14px;background:color-mix(in srgb,var(--accent) 6%,var(--bg));border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line))}
+.rep-row{display:flex;align-items:center;gap:10px;font-size:14px;flex-wrap:wrap}
+.rep-box .rep-n{width:5.5em;flex:none;text-align:center;font-variant-numeric:tabular-nums}
+.rep-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.rep-days button{width:100%;max-width:44px;aspect-ratio:1;justify-self:center;border-radius:50%;border:1px solid var(--line2);font-weight:600;font-size:13px;color:var(--mut);transition:background .15s,color .15s}
+.rep-days button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);border-color:transparent;box-shadow:0 0 calc(12px * var(--glow)) color-mix(in srgb,var(--accent) 45%,transparent)}
+.rep-box .seg button{white-space:normal;line-height:1.25}
+.rep-sum{margin:0;display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.45;color:var(--ink)}
+.rep-sum svg{width:16px;height:16px;flex:none;margin-top:1px}
+.choice h2{margin:0 0 6px;font:600 calc(18px * var(--fs))/1.3 var(--f-body);text-wrap:balance}
+.choice-list{display:flex;flex-direction:column;gap:8px;margin:14px 0 6px}
+.choice-list .btn{width:100%;justify-content:flex-start;white-space:normal;text-align:left}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .sp{flex:1}
 .form{display:flex;flex-direction:column;gap:16px}
@@ -397,6 +409,9 @@ button.fp:hover{background:radial-gradient(circle,color-mix(in srgb,var(--accent
 <div class="overlay" id="confirmWrap" hidden style="z-index:60"><div class="backdrop" data-cancel></div>
   <section class="sheet" role="alertdialog" style="width:min(400px,100%)"><p id="cfMsg" style="margin:0 0 18px;font-size:15px;line-height:1.5"></p>
   <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-cancel>Annuler</button><button class="btn danger" data-ok>Confirmer</button></div></section></div>
+<div class="overlay" id="choiceWrap" hidden style="z-index:60"><div class="backdrop" data-cancel></div>
+  <section class="sheet choice" role="alertdialog" aria-labelledby="chTitle" style="width:min(420px,100%)"><h2 id="chTitle"></h2><p class="hint" id="chMsg"></p><div class="choice-list" id="chList"></div>
+  <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-cancel>Annuler</button></div></section></div>
 <div id="lightbox" hidden></div>
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -451,6 +466,7 @@ const I={
   vWeek:sv('<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M9.2 4.5v15M14.8 4.5v15"/>'),
   vMonth:sv('<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 9.5h17M3.5 14.5h17M9.2 9.5v10M14.8 9.5v10"/>'),
   vYear:sv('<rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6"/>'),
+  repeat:sv('<path d="M17 2.5l3 3-3 3"/><path d="M4 11.5v-1a5 5 0 0 1 5-5h11"/><path d="M7 21.5l-3-3 3-3"/><path d="M20 12.5v1a5 5 0 0 1-5 5H4"/>'),
   shield:sv('<path d="M12 3l7.5 3v5.5c0 4.5-3.2 8.2-7.5 9.5-4.3-1.3-7.5-5-7.5-9.5V6z"/><path d="M9 12l2.2 2.2L15.5 10"/>')
 };
 document.querySelectorAll('[data-icon]').forEach(el=>{el.innerHTML=I[el.dataset.icon]+el.innerHTML});
@@ -531,7 +547,235 @@ function eventsForDay(ds){
   if(S.settings.holidays){const h=holidays(d0.getFullYear())[ds];if(h)out.push({id:'h'+ds,title:h,start:ds,end:ds,allDay:true,holiday:true,color:'#8693AD'})}
   return out.sort(sortEv);
 }
-const findEv=id=>S.events.find(e=>e.id===id)||S.secure.find(e=>e.id===id);
+/* ---------- répétition des événements ----------
+   Une série est un événement avec une règle « rec » :
+   {freq:'day'|'week'|'month'|'year', interval, days:[0..6] (semaine), mode:'date'|'nth'|'last', md, nth, wd (mois),
+    end:{type:'never'|'until'|'count', until, count}, ex:[dates supprimées AAAA-MM-JJ]}
+   Chaque date affichée est une « occurrence » d'identifiant <série>~<AAAA-MM-JJ>. */
+const OCC='~';
+const WD_ICS=['SU','MO','TU','WE','TH','FR','SA'];
+const WD_LONG=['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
+const WEEK_ORDER=[1,2,3,4,5,6,0];
+const MONTHS_LOW=Array.from({length:12},(_,i)=>new Date(2026,i,1).toLocaleDateString('fr-FR',{month:'long'}));
+const isKey=k=>/^\d{4}-\d\d-\d\d$/.test(String(k||''));
+const daysBetween=(a,b)=>Math.round((Date.UTC(b.getFullYear(),b.getMonth(),b.getDate())-Date.UTC(a.getFullYear(),a.getMonth(),a.getDate()))/864e5);
+const shiftDs=(x,n)=>ymd(addDays(parseYMD(x.slice(0,10)),n))+x.slice(10);
+const ordFr=n=>n===1?'1er':n+'e';
+const dayFr=n=>n===1?'1er':String(n);   // « le 1er », « le 27 »
+const listFr=a=>a.length<2?a.join(''):a.slice(0,-1).join(', ')+' et '+a[a.length-1];
+function normRec(r,startDs){
+  if(!r||typeof r!=='object'||!['day','week','month','year'].includes(r.freq))return null;
+  const s=parseYMD(isKey(startDs)?startDs:ymd(new Date()));
+  const o={freq:r.freq,interval:Math.min(999,Math.max(1,parseInt(r.interval,10)||1))};
+  if(o.freq==='week'){const d=(Array.isArray(r.days)?r.days:[]).map(Number);o.days=WEEK_ORDER.filter(x=>d.includes(x));if(!o.days.length)o.days=[s.getDay()]}
+  if(o.freq==='month'){
+    o.mode=['date','nth','last'].includes(r.mode)?r.mode:'date';
+    if(o.mode==='date')o.md=Math.min(31,Math.max(1,parseInt(r.md,10)||s.getDate()));
+    else{const wd=parseInt(r.wd,10);o.wd=wd>=0&&wd<=6?wd:s.getDay();if(o.mode==='nth')o.nth=Math.min(5,Math.max(1,parseInt(r.nth,10)||Math.ceil(s.getDate()/7)))}
+  }
+  const e=r.end||{};
+  o.end=e.type==='until'&&isKey(e.until)?{type:'until',until:e.until}:e.type==='count'?{type:'count',count:Math.min(9999,Math.max(1,parseInt(e.count,10)||1))}:{type:'never'};
+  o.ex=[...new Set((Array.isArray(r.ex)?r.ex:[]).filter(isKey))].sort();
+  return o;
+}
+/* Dates (AAAA-MM-JJ) des occurrences entre from et to inclus, dans l'ordre.
+   Comme dans la norme des agendas (RFC 5545) : une date supprimée compte dans « N fois »,
+   et les mois sans le 31 (ou les années sans 29 février) sont sautés. */
+function recurKeys(ev,from,to,max=Infinity,withEx=false){
+  const r=ev&&ev.rec;if(!r)return[];
+  const s0=parseYMD(ev.start.slice(0,10)),iv=Math.max(1,(r.interval|0)||1);
+  const e=r.end||{},until=e.type==='until'&&isKey(e.until)?parseYMD(e.until):null,count=e.type==='count'?Math.max(0,e.count|0):Infinity;
+  const stop=until&&until<to?until:to;
+  const ex=withEx?null:new Set(r.ex||[]);
+  const out=[];let n=0,guard=0;
+  const emit=d=>{
+    if(d<s0)return true;
+    if(d>stop)return false;
+    if(++n>count)return false;
+    if(d>=from){const k=ymd(d);if(!ex||!ex.has(k)){out.push(k);if(out.length>=max)return false}}
+    return true;
+  };
+  const jump=count===Infinity&&from>s0;
+  if(r.freq==='day'){
+    let k=jump?Math.max(0,Math.floor(daysBetween(s0,from)/iv)-1):0;
+    for(;guard<200000;k++,guard++){if(!emit(addDays(s0,k*iv)))break}
+  }else if(r.freq==='week'){
+    const ws=startOfWeek(s0),days=r.days&&r.days.length?WEEK_ORDER.filter(x=>r.days.includes(x)):[s0.getDay()];
+    let w=jump?Math.max(0,Math.floor(daysBetween(ws,from)/(7*iv))-1):0;
+    outer:for(;guard<200000;w++){
+      const wk=addDays(ws,w*7*iv);
+      if(wk>stop)break;
+      for(const dw of days){guard++;if(!emit(addDays(wk,(dw+6)%7)))break outer}
+    }
+  }else if(r.freq==='month'){
+    let k=jump?Math.max(0,Math.floor(((from.getFullYear()-s0.getFullYear())*12+from.getMonth()-s0.getMonth())/iv)-1):0;
+    for(;guard<200000;k++,guard++){
+      const y=s0.getFullYear(),mo=s0.getMonth()+k*iv,first=new Date(y,mo,1);
+      if(first>stop)break;
+      const dim=new Date(y,mo+1,0).getDate();let day;
+      if((r.mode||'date')==='date')day=r.md||s0.getDate();
+      else{const wd=r.wd??s0.getDay();
+        if(r.mode==='last')day=dim-((new Date(y,mo+1,0).getDay()-wd+7)%7);
+        else day=1+((wd-first.getDay()+7)%7)+((r.nth||1)-1)*7}
+      if(day>dim)continue;
+      if(!emit(new Date(y,mo,day)))break;
+    }
+  }else if(r.freq==='year'){
+    const mo=s0.getMonth(),md=s0.getDate();
+    let k=jump?Math.max(0,Math.floor((from.getFullYear()-s0.getFullYear())/iv)-1):0;
+    for(;guard<200000;k++,guard++){
+      const y=s0.getFullYear()+k*iv;
+      if(new Date(y,0,1)>stop)break;
+      if(new Date(y,mo+1,0).getDate()<md)continue;
+      if(!emit(new Date(y,mo,md)))break;
+    }
+  }
+  return out;
+}
+function occAt(ev,k){
+  const dd=daysBetween(parseYMD(ev.start.slice(0,10)),parseYMD(k));
+  return{...ev,id:ev.id+OCC+k,baseId:ev.id,occ:k,start:shiftDs(ev.start,dd),end:shiftDs(ev.end||ev.start,dd)};
+}
+function expandList(list,from,to){
+  const out=[];
+  for(const ev of list){
+    if(!ev.rec){out.push(ev);continue}
+    try{
+      const span=Math.max(0,daysBetween(parseYMD(ev.start.slice(0,10)),parseYMD((ev.end||ev.start).slice(0,10))));
+      for(const k of recurKeys(ev,addDays(from,-span),to))out.push(occAt(ev,k));
+    }catch(e){out.push(ev)}
+  }
+  return out;
+}
+function viewRange(){
+  const c=S.cur;
+  if(S.view==='year')return[new Date(c.getFullYear(),0,1),new Date(c.getFullYear(),11,31)];
+  const m0=new Date(c.getFullYear(),c.getMonth(),1),m1=new Date(c.getFullYear(),c.getMonth()+1,0),w0=startOfWeek(c),w1=addDays(w0,6);
+  let a=startOfWeek(m0),b=addDays(startOfWeek(m1),6);if(w0<a)a=w0;if(w1>b)b=w1;
+  return[addDays(a,-1),addDays(b,1)];
+}
+const baseIdOf=id=>{id=String(id);const i=id.indexOf(OCC);return i<0?id:id.slice(0,i)};
+const baseOf=id=>{const b=baseIdOf(id);return S.events.find(e=>e.id===b)||S.secure.find(e=>e.id===b)};
+const findEv=id=>{const b=baseOf(id);if(!b)return b;const t=String(id),i=t.indexOf(OCC);return i>=0&&b.rec?occAt(b,t.slice(i+1)):b};
+const allStored=()=>S.events.concat(S.secure);
+function removeIds(ids){const z=new Set(ids);S.events=S.events.filter(x=>!z.has(x.id));S.secure=S.secure.filter(x=>!z.has(x.id))}
+function putEv(ev,secure){removeIds([ev.id]);(secure?S.secure:S.events).push(ev)}
+function plainEv(o){const c={...o};delete c.occ;delete c.baseId;delete c.secure;delete c.sample;delete c.locked;return c}
+const hasAny=b=>{const s0=parseYMD(b.start.slice(0,10));return recurKeys(b,s0,addDays(s0,36600),1).length>0};
+const isFirstOcc=(b,k)=>recurKeys(b,parseYMD(b.start.slice(0,10)),addDays(parseYMD(k),-1),1).length===0;
+function addEx(b,k){b.rec.ex=[...new Set([...(b.rec.ex||[]),k])].sort()}
+/* Arrête la série avant la date k. Les dates modifiées à partir de k sont supprimées (to===undefined),
+   gardées (to===null) ou rattachées à une nouvelle série (to = son identifiant). */
+function cutSeries(b,k,to){
+  const before=recurKeys(b,parseYMD(b.start.slice(0,10)),addDays(parseYMD(k),-1),Infinity,true).length;
+  b.rec.end=b.rec.end&&b.rec.end.type==='count'?{type:'count',count:before}:{type:'until',until:ymd(addDays(parseYMD(k),-1))};
+  b.rec.ex=(b.rec.ex||[]).filter(x=>x<k);
+  const after=allStored().filter(x=>x.fromSeries===b.id&&x.occKey>=k);
+  if(to===undefined)removeIds(after.map(x=>x.id));else if(to)after.forEach(x=>{x.fromSeries=to});
+  if(!before||!hasAny(b))removeIds([b.id]);
+}
+function removeSeries(b){removeIds([b.id,...allStored().filter(x=>x.fromSeries===b.id).map(x=>x.id)])}
+/* Place la première date sur un jour prévu par la règle (ex. : « le mardi » alors que la date choisie est un lundi). */
+function firstOnRule(ev){
+  const s=parseYMD(ev.start.slice(0,10));
+  const k=recurKeys({...ev,rec:{...ev.rec,ex:[]}},s,addDays(s,36600),1)[0];
+  if(!k){toast('Cette répétition ne donne aucune date : vérifiez quand elle se termine.',4500);return false}
+  if(k!==ymd(s)){const dd=daysBetween(s,parseYMD(k));ev.start=shiftDs(ev.start,dd);ev.end=shiftDs(ev.end||ev.start,dd)}
+  return true;
+}
+const ruleSig=r=>r?JSON.stringify([r.freq,r.interval||1,r.freq==='week'?WEEK_ORDER.filter(x=>(r.days||[]).includes(x)):0,
+  r.freq==='month'?[r.mode||'date',(r.mode||'date')==='date'?r.md||0:r.wd,r.mode==='nth'?r.nth:0]:0,
+  (r.end&&r.end.type)||'never',(r.end&&(r.end.until||r.end.count))||0]):'';
+const sameRule=(a,b)=>ruleSig(a)===ruleSig(b);
+function recText(r,ds){
+  if(!r)return '';
+  const s=parseYMD(String(ds||'').slice(0,10)||ymd(new Date())),n=r.interval||1;
+  let t;
+  if(r.freq==='day')t=n===1?'Tous les jours':`Tous les ${n} jours`;
+  else if(r.freq==='week'){
+    const d=r.days&&r.days.length?r.days:[s.getDay()];
+    if(n===1&&d.length===5&&[1,2,3,4,5].every(x=>d.includes(x)))t='Du lundi au vendredi';
+    else if(n===1&&d.length===7)t='Tous les jours';
+    else t=(n===1?'Toutes les semaines':`Toutes les ${n} semaines`)+' '+listFr(WEEK_ORDER.filter(x=>d.includes(x)).map(x=>'le '+WD_LONG[x]));
+  }else if(r.freq==='month'){
+    const m=r.mode||'date',md=r.md||s.getDate();
+    t=(n===1?'Tous les mois':`Tous les ${n} mois`)+' '+(m==='nth'?`le ${ordFr(r.nth||1)} ${WD_LONG[r.wd]}`:m==='last'?`le dernier ${WD_LONG[r.wd]}`:`le ${dayFr(md)}`);
+    if(m==='date'&&md>28)t+=` (les mois sans ${md} sont sautés)`;
+  }else{
+    t=(n===1?'Tous les ans':`Tous les ${n} ans`)+` le ${dayFr(s.getDate())} ${MONTHS_LOW[s.getMonth()]}`;
+    if(s.getMonth()===1&&s.getDate()===29)t+=' (années bissextiles)';
+  }
+  const e=r.end||{};
+  if(e.type==='until'&&isKey(e.until))t+=`, jusqu’au ${parseYMD(e.until).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})}`;
+  else if(e.type==='count')t+=`, ${e.count} fois`;
+  return t;
+}
+/* ---- format iCalendar (RRULE) ---- */
+const icsD=d=>`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+const icsU=d=>`${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+function icsDateKey(v){
+  v=String(v||'').trim();
+  let m=v.match(/^(\d{4})(\d{2})(\d{2})$/);if(m)return `${m[1]}-${m[2]}-${m[3]}`;
+  m=v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?$/);if(!m)return null;
+  if(m[7])return ymd(new Date(Date.UTC(+m[1],m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0))));
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+function recToRRULE(r,ev){
+  const p=['FREQ='+{day:'DAILY',week:'WEEKLY',month:'MONTHLY',year:'YEARLY'}[r.freq]];
+  if((r.interval||1)>1)p.push('INTERVAL='+r.interval);
+  if(r.freq==='week')p.push('BYDAY='+WEEK_ORDER.filter(x=>(r.days||[]).includes(x)).map(x=>WD_ICS[x]).join(','));
+  if(r.freq==='month')p.push((r.mode||'date')==='date'?'BYMONTHDAY='+(r.md||parseYMD(ev.start.slice(0,10)).getDate()):'BYDAY='+(r.mode==='last'?'-1':(r.nth||1))+WD_ICS[r.wd]);
+  const e=r.end||{};
+  if(e.type==='count')p.push('COUNT='+e.count);
+  else if(e.type==='until'){const u=parseYMD(e.until);p.push('UNTIL='+(ev.allDay?icsD(u):icsU(new Date(u.getFullYear(),u.getMonth(),u.getDate(),23,59,59))))}
+  return p.join(';');
+}
+/* Règle iCalendar → règle Orbite ; null si Orbite ne sait pas la reproduire exactement. */
+function rruleToRec(rr,startDs){
+  const p={};
+  for(const kv of String(rr||'').split(';')){const i=kv.indexOf('=');if(i>0)p[kv.slice(0,i).trim().toUpperCase()]=kv.slice(i+1).trim().toUpperCase()}
+  const known=new Set(['FREQ','INTERVAL','COUNT','UNTIL','BYDAY','BYMONTHDAY','BYMONTH','BYSETPOS','WKST']);
+  if(!p.FREQ||Object.keys(p).some(k=>!known.has(k)))return null;
+  const s=parseYMD(startDs),iv=p.INTERVAL?parseInt(p.INTERVAL,10):1;
+  if(!(iv>=1&&iv<=999))return null;
+  const r={interval:iv,ex:[]};
+  if(p.COUNT){const c=parseInt(p.COUNT,10);if(!(c>=1))return null;r.end={type:'count',count:Math.min(c,9999)}}
+  else if(p.UNTIL){const k=icsDateKey(p.UNTIL);if(!k)return null;r.end={type:'until',until:k}}
+  else r.end={type:'never'};
+  const days=p.BYDAY?p.BYDAY.split(',').filter(Boolean):[];
+  const plain=()=>{const d=days.map(x=>WD_ICS.indexOf(x));return d.some(x=>x<0)?null:WEEK_ORDER.filter(x=>d.includes(x))};
+  if(p.FREQ==='DAILY'){
+    if(p.BYMONTHDAY||p.BYMONTH||p.BYSETPOS)return null;
+    if(days.length){if(iv!==1)return null;const d=plain();if(!d)return null;r.freq='week';r.days=d}
+    else r.freq='day';
+  }else if(p.FREQ==='WEEKLY'){
+    if(p.BYMONTHDAY||p.BYMONTH||p.BYSETPOS)return null;
+    const d=days.length?plain():[s.getDay()];if(!d)return null;
+    r.freq='week';r.days=d;
+  }else if(p.FREQ==='MONTHLY'){
+    if(p.BYMONTH)return null;
+    r.freq='month';
+    if(p.BYMONTHDAY){
+      if(days.length||p.BYSETPOS||p.BYMONTHDAY.includes(','))return null;
+      const md=parseInt(p.BYMONTHDAY,10);if(!(md>=1&&md<=31))return null;
+      r.mode='date';r.md=md;
+    }else if(days.length){
+      if(days.length!==1)return null;
+      const m=days[0].match(/^([+-]?\d)?(SU|MO|TU|WE|TH|FR|SA)$/);if(!m)return null;
+      let n=m[1]?parseInt(m[1],10):null;
+      if(p.BYSETPOS){if(n!==null||p.BYSETPOS.includes(','))return null;n=parseInt(p.BYSETPOS,10)}
+      if(n===null)return null;
+      r.wd=WD_ICS.indexOf(m[2]);
+      if(n===-1)r.mode='last';else if(n>=1&&n<=5){r.mode='nth';r.nth=n}else return null;
+    }else{r.mode='date';r.md=s.getDate()}
+  }else if(p.FREQ==='YEARLY'){
+    if(days.length||p.BYSETPOS)return null;
+    if(p.BYMONTH&&(p.BYMONTH.includes(',')||parseInt(p.BYMONTH,10)!==s.getMonth()+1))return null;
+    if(p.BYMONTHDAY&&(p.BYMONTHDAY.includes(',')||parseInt(p.BYMONTHDAY,10)!==s.getDate()))return null;
+    r.freq='year';
+  }else return null;
+  return r;
+}
 
 function whenText(e){
   const[s,en]=range(e);
@@ -550,7 +794,7 @@ function periodLabel(){
 function viewKey(){const c=S.cur;return S.view+'|'+(S.view==='week'?ymd(startOfWeek(c)):S.view==='month'?c.getFullYear()+'-'+c.getMonth():S.view==='year'?c.getFullYear():ymd(c))}
 
 function render(){
-  VIS=visible();DAYIDX=buildDayIndex(VIS);
+  const[w0,w1]=viewRange();VIS=expandList(visible(),w0,w1);DAYIDX=buildDayIndex(VIS);
   $('#period').innerHTML=periodLabel();
   document.querySelectorAll('#views button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.v===S.view)));
   const main=$('#main'),prevTop=main.scrollTop,key=viewKey(),same=key===S.lastKey;
@@ -615,6 +859,7 @@ function card(e){
     <div class="c"><span class="ttl"><span>${e.locked?'Événement privé':esc(e.title)}</span></span>
     ${e.locked?'<small>'+I.lock+'Déverrouillez le coffre pour voir le détail</small>':''}
     ${!e.locked&&e.location?`<small>${I.pin}${esc(e.location)}</small>`:''}
+    ${!e.locked&&e.rec?`<small>${I.repeat}${esc(recText(e.rec,e.start))}</small>`:''}
     ${!e.locked&&n?`<small>${I.clip}${n} pièce${n>1?'s':''} jointe${n>1?'s':''}</small>`:''}</div>
     ${e.locked?'':`<button class="ib sm" data-share="${e.id}" aria-label="Partager « ${esc(e.title)} »">${I.share}</button>`}</div>`;
 }
@@ -692,8 +937,8 @@ $('#view').addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.t
 
 /* raccourcis clavier (ordinateur) */
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){if(!$('#lightbox').hidden)closeLightbox();else if(!$('#sheetWrap').hidden)closeSheet();return}
-  if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select')||!$('#sheetWrap').hidden||!$('#confirmWrap').hidden)return;
+  if(e.key==='Escape'){if(!$('#choiceWrap').hidden)$('#choiceWrap .btn[data-cancel]').click();else if(!$('#confirmWrap').hidden)$('#confirmWrap .btn[data-cancel]').click();else if(!$('#lightbox').hidden)closeLightbox();else if(!$('#sheetWrap').hidden)closeSheet();return}
+  if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select')||!$('#sheetWrap').hidden||!$('#confirmWrap').hidden||!$('#choiceWrap').hidden)return;
   const k=e.key.toLowerCase();
   if(k==='arrowleft')nav(-1);else if(k==='arrowright')nav(1);
   else if(k==='t'){S.cur=new Date();S.lastKey='';render()}
@@ -751,16 +996,99 @@ function play(kind){
 }
 
 /* ---------- éditeur d'événement ---------- */
-let draft=null;
+let draft=null,editorRec=null,editorOrig='',repTouched=false;
+const fieldsSig=x=>JSON.stringify([x.title,!!x.allDay,x.start,x.end,x.location||'',x.notes||'',x.reminder||0,x.color||'',(x.attachments||[]).map(a=>a.id)]);
+function monthModes(s){
+  const d=s.getDate(),dim=new Date(s.getFullYear(),s.getMonth()+1,0).getDate(),n=Math.ceil(d/7),wd=s.getDay();
+  const o=[{mode:'date',label:`Le ${dayFr(d)}`}];
+  if(n<=4)o.push({mode:'nth',label:`Le ${ordFr(n)} ${WD_LONG[wd]}`});
+  if(d+7>dim)o.push({mode:'last',label:`Le dernier ${WD_LONG[wd]}`});
+  return o;
+}
+const repKind=r=>!r?'none':(r.freq==='week'&&(r.interval||1)===1&&(r.days||[]).length===5&&[1,2,3,4,5].every(x=>r.days.includes(x)))?'weekday':r.freq;
+const repHtml=()=>`<div class="fld" id="f-rep-w"><span>Répétition</span>
+    <select id="f-rep" aria-label="Répétition">${[['none','Ne se répète pas'],['day','Tous les jours'],['weekday','Du lundi au vendredi'],['week','Toutes les semaines'],['month','Tous les mois'],['year','Tous les ans']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+    <div class="rep-box" id="f-rep-box" hidden>
+      <div class="rep-row" id="f-iv-row"><span id="f-iv-p">Tous les</span><input class="inp rep-n" type="number" id="f-iv" min="1" max="99" step="1" inputmode="numeric" aria-label="Intervalle de répétition"><span id="f-iv-u">jours</span></div>
+      <div class="rep-days" id="f-days" role="group" aria-label="Jours de la semaine">${WEEK_ORDER.map(d=>`<button type="button" data-wd="${d}" aria-label="${WD_LONG[d]}" aria-pressed="false">${WD_LONG[d][0].toUpperCase()}</button>`).join('')}</div>
+      <div class="seg" id="f-mm" role="group" aria-label="Jour du mois"></div>
+      <div class="fld"><span>Fin de la répétition</span>
+        <div class="seg" id="f-endt" role="group" aria-label="Fin de la répétition"><button type="button" data-val="never">Jamais</button><button type="button" data-val="until">À une date</button><button type="button" data-val="count">Après X fois</button></div>
+        <input class="inp" type="date" id="f-until" aria-label="Dernière date de la répétition" hidden>
+        <div class="rep-row" id="f-cnt-row" hidden><input class="inp rep-n" type="number" id="f-cnt" min="1" max="999" step="1" inputmode="numeric" aria-label="Nombre de fois"><span>fois en tout</span></div>
+      </div>
+      <p class="rep-sum" id="f-rep-sum"></p>
+    </div>
+  </div>`;
+function mountRep(f,sd0){
+  const r0=draft.rec||null,sdv=()=>f('sd').value||sd0;
+  const st={days:new Set(r0&&r0.freq==='week'&&r0.days&&r0.days.length?r0.days:[parseYMD(sd0).getDay()]),mode:r0&&r0.freq==='month'?(r0.mode||'date'):'date',endType:r0&&r0.end?r0.end.type:'never',wd:parseYMD(sd0).getDay()};
+  const sel=f('rep');sel.value=repKind(r0);
+  f('iv').value=r0?r0.interval||1:1;
+  f('until').value=r0&&r0.end&&r0.end.type==='until'?r0.end.until:'';
+  f('cnt').value=r0&&r0.end&&r0.end.type==='count'?r0.end.count:10;
+  const read=()=>{
+    const t=sel.value;if(t==='none')return null;
+    const s=parseYMD(sdv()),iv=Math.min(99,Math.max(1,parseInt(f('iv').value,10)||1));
+    let r;
+    if(t==='day')r={freq:'day',interval:iv};
+    else if(t==='weekday')r={freq:'week',interval:1,days:[1,2,3,4,5]};
+    else if(t==='week')r={freq:'week',interval:iv,days:WEEK_ORDER.filter(x=>st.days.has(x))};
+    else if(t==='month'){const m=monthModes(s).some(o=>o.mode===st.mode)?st.mode:'date';r={freq:'month',interval:iv,mode:m};if(m==='date')r.md=s.getDate();else{r.wd=s.getDay();if(m==='nth')r.nth=Math.ceil(s.getDate()/7)}}
+    else r={freq:'year',interval:iv};
+    r.end=st.endType==='until'?{type:'until',until:f('until').value}:st.endType==='count'?{type:'count',count:Math.min(999,Math.max(1,parseInt(f('cnt').value,10)||1))}:{type:'never'};
+    r.ex=[];
+    return r;
+  };
+  editorRec=read;
+  const UNIT={day:['jour','jours'],week:['semaine','semaines'],month:['mois','mois'],year:['an','ans']};
+  const draw=()=>{
+    const t=sel.value;
+    f('rep-box').hidden=t==='none';if(t==='none')return;
+    const iv=Math.max(1,parseInt(f('iv').value,10)||1);
+    f('iv-row').hidden=t==='weekday';
+    if(t!=='weekday'){f('iv-p').textContent=t==='week'?'Toutes les':'Tous les';f('iv-u').textContent=UNIT[t][iv>1?1:0]}
+    f('days').hidden=t!=='week';
+    f('days').querySelectorAll('[data-wd]').forEach(b=>b.setAttribute('aria-pressed',String(st.days.has(+b.dataset.wd))));
+    f('mm').hidden=t!=='month';
+    if(t==='month'){const opts=monthModes(parseYMD(sdv()));if(!opts.some(o=>o.mode===st.mode))st.mode='date';f('mm').innerHTML=opts.map(o=>`<button type="button" data-val="${o.mode}" aria-pressed="${o.mode===st.mode}">${esc(o.label)}</button>`).join('')}
+    f('endt').querySelectorAll('[data-val]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.val===st.endType)));
+    f('until').hidden=st.endType!=='until';f('cnt-row').hidden=st.endType!=='count';
+    f('rep-sum').innerHTML=`${I.repeat}<span>${esc(recText(read(),sdv()))}</span>`;
+  };
+  const touch=()=>{repTouched=true;draw()};
+  sel.addEventListener('change',()=>{if(sel.value==='week'&&!st.days.size)st.days.add(parseYMD(sdv()).getDay());touch()});
+  f('iv').addEventListener('input',touch);
+  f('days').addEventListener('click',e=>{const b=e.target.closest('[data-wd]');if(!b)return;const d=+b.dataset.wd;
+    if(st.days.has(d)){if(st.days.size===1){toast('Gardez au moins un jour');return}st.days.delete(d)}else st.days.add(d);touch()});
+  f('mm').addEventListener('click',e=>{const b=e.target.closest('[data-val]');if(!b)return;st.mode=b.dataset.val;touch()});
+  f('endt').addEventListener('click',e=>{const b=e.target.closest('[data-val]');if(!b)return;st.endType=b.dataset.val;
+    const s=parseYMD(sdv());
+    if(st.endType==='until'&&!f('until').value)f('until').value=ymd(new Date(s.getFullYear(),s.getMonth()+3,s.getDate()));
+    if(st.endType==='count'&&!f('cnt').value)f('cnt').value=10;
+    touch()});
+  f('until').addEventListener('change',touch);f('cnt').addEventListener('input',touch);
+  // la règle suit la date de début : si la date est décalée de N jours sans toucher à la répétition,
+  // les jours de la semaine choisis sont décalés d'autant (mardi + jeudi → mercredi + vendredi)
+  let prev=sdv();
+  f('sd').addEventListener('change',()=>{const cur=sdv();if(!isKey(cur))return;const nd=parseYMD(cur).getDay();
+    if(!repTouched&&isKey(prev)){const dd=daysBetween(parseYMD(prev),parseYMD(cur));st.days=new Set([...st.days].map(d=>((d+dd)%7+7)%7))}
+    else if(st.days.size===1&&st.days.has(st.wd)){st.days.clear();st.days.add(nd)}
+    st.wd=nd;prev=cur;draw()});
+  draw();
+}
 function openEditor(id,preset={}){
   const src=id?findEv(id):null,isNew=!src;
-  if(src){draft=JSON.parse(JSON.stringify(src));draft.secure=!!S.secure.find(e=>e.id===id)}
+  editorRec=null;repTouched=false;
+  if(src){draft=JSON.parse(JSON.stringify(src));draft.secure=S.secure.some(e=>e.id===baseIdOf(id))}
   else{
     const date=preset.date||ymd(S.cur),now=new Date();
     let mins=preset.mins??(date===ymd(now)?Math.min(1380,Math.ceil((now.getHours()*60+now.getMinutes()+1)/30)*30):540);
     const em=Math.min(1439,mins+60);
     draft={id:uid(),title:'',allDay:false,start:`${date}T${hm(mins)}`,end:`${date}T${hm(em)}`,color:S.settings.accent,location:'',notes:'',reminder:15,attachments:[],secure:!!preset.secure};
   }
+  editorOrig=src?fieldsSig(draft):'';
+  const followed=!!(draft.src&&String(draft.src).startsWith('tel:')&&!draft.detached);
   const sd=draft.start.slice(0,10),ed=(draft.end||draft.start).slice(0,10);
   const st=draft.allDay?'09:00':draft.start.slice(11,16),et=draft.allDay?'10:00':(draft.end||'').slice(11,16)||'10:00';
   const colors=[...ACCENTS.map(a=>a[0]),'#8693AD'];if(!colors.some(c=>c.toLowerCase()===draft.color.toLowerCase()))colors.unshift(draft.color);
@@ -772,6 +1100,7 @@ function openEditor(id,preset={}){
       <div class="fld"><span>Début</span><div class="dt"><input class="inp" type="date" id="f-sd" aria-label="Date de début"><input class="inp" type="time" id="f-st" aria-label="Heure de début"></div></div>
       <div class="fld"><span>Fin</span><div class="dt"><input class="inp" type="date" id="f-ed" aria-label="Date de fin"><input class="inp" type="time" id="f-et" aria-label="Heure de fin"></div></div>
     </div>
+    ${followed?'<p class="hint">Ce rendez-vous vient de l’agenda du téléphone : sa répétition se règle dans cet agenda.</p>':repHtml()}
     <label class="fld"><span>Lieu</span><input class="inp" id="f-loc" placeholder="Adresse, salle, visio…" autocomplete="off"></label>
     <div class="fld"><span>Couleur</span><div class="swatches" id="f-colors">${colors.map(c=>`<button type="button" class="swatch" style="--c:${safeColor(c)}" data-val="${safeColor(c)}" aria-label="Couleur ${c}" aria-pressed="${c.toLowerCase()===draft.color.toLowerCase()}"></button>`).join('')}</div></div>
     <label class="fld"><span>Rappel</span><select id="f-rem">${REMIND.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label>
@@ -793,6 +1122,7 @@ function openEditor(id,preset={}){
     f('file').onchange=async()=>{await addFiles([...f('file').files]);f('file').value=''};
     f('secure').onchange=()=>{if(f('secure').checked&&!S.vaultKey){f('secure').checked=false;toast(S.vault?'Ouvrez d’abord le coffre (icône cadenas en haut).':'Créez d’abord votre coffre (icône cadenas en haut).',3800)}};
     if(f('del'))f('del').onclick=()=>deleteEvent(draft.id);
+    if(!followed)mountRep(f,sd);
     sh.querySelector('#evForm').onsubmit=e=>{e.preventDefault();saveDraft()};
     drawAtts();
     if(isNew&&matchMedia('(pointer:fine)').matches)setTimeout(()=>f('title').focus(),60);
@@ -816,32 +1146,107 @@ function drawAtts(){
   box.onclick=e=>{const rm=e.target.closest('[data-rm]');if(rm){draft.attachments=draft.attachments.filter(a=>a.id!==rm.dataset.rm);drawAtts();return}
     const t=e.target.closest('[data-att]');if(t)openAtt(draft.attachments.find(a=>a.id===t.dataset.att))};
 }
-function upsert(arr,ev){const i=arr.findIndex(x=>x.id===ev.id);if(i<0)arr.push(ev);else arr[i]=ev}
+function askChoice(title,msg,opts,danger){return new Promise(res=>{
+  const w=$('#choiceWrap'),list=$('#chList');$('#chTitle').textContent=title;const m=$('#chMsg');m.textContent=msg||'';m.hidden=!msg;
+  list.innerHTML=opts.map(([v,l])=>`<button type="button" class="btn ${danger?'danger':'ghost'}" data-v="${esc(v)}">${esc(l)}</button>`).join('');
+  w.hidden=false;$('#toast').classList.remove('show');
+  const done=v=>{w.hidden=true;list.onclick=null;w.querySelectorAll('[data-cancel]').forEach(x=>x.onclick=null);res(v)};
+  list.onclick=e=>{const b=e.target.closest('[data-v]');if(b)done(b.dataset.v)};
+  w.querySelectorAll('[data-cancel]').forEach(x=>x.onclick=()=>done(null));
+  const b0=list.querySelector('button');if(b0)b0.focus();
+})}
 async function saveDraft(){
   const f=k=>$('#f-'+k);
   const title=f('title').value.trim();if(!title){f('title').focus();toast('Donnez un titre à l’événement');return}
   const allDay=f('allday').checked,sd=f('sd').value,ed=f('ed').value||sd;
   if(!sd){toast('Choisissez une date de début');return}
-  const ev={...draft,title,allDay,location:f('loc').value.trim(),notes:f('notes').value,reminder:+f('rem').value};
-  delete ev.sample;
-  if(allDay){ev.start=sd;ev.end=ed<sd?sd:ed}
-  else{ev.start=`${sd}T${f('st').value||'09:00'}`;ev.end=`${ed}T${f('et').value||f('st').value||'10:00'}`;if(new Date(ev.end)<=new Date(ev.start)){toast('L’heure de fin doit suivre l’heure de début');return}}
-  const toSecure=f('secure').checked,wasSecure=!!S.secure.find(x=>x.id===ev.id);
-  delete ev.secure;
-  if(toSecure){forgetPhoneEvent(ev);S.events=S.events.filter(x=>x.id!==ev.id);upsert(S.secure,ev);await saveVault()}
-  else{S.secure=S.secure.filter(x=>x.id!==ev.id);upsert(S.events,ev);if(wasSecure)await saveVault()}
-  await saveEvents();
-  play(S.settings.sound);closeSheet();toast(toSecure?'Enregistré dans le coffre':'Événement enregistré');
-  S.cur=parseYMD(sd);render();
+  let start,end;
+  if(allDay){start=sd;end=ed<sd?sd:ed}
+  else{start=`${sd}T${f('st').value||'09:00'}`;end=`${ed}T${f('et').value||f('st').value||'10:00'}`;if(new Date(end)<=new Date(start)){toast('L’heure de fin doit suivre l’heure de début');return}}
+  const rec=editorRec?editorRec():(draft.rec?{...draft.rec}:null);
+  if(rec){
+    if(rec.freq==='week'&&!(rec.days||[]).length){toast('Choisissez au moins un jour de la semaine');return}
+    if(rec.end&&rec.end.type==='until'&&(!isKey(rec.end.until)||rec.end.until<sd)){toast('La fin de la répétition doit venir après la première date',4500);return}
+  }
+  const fields={title,allDay,start,end,location:f('loc').value.trim(),notes:f('notes').value,reminder:+f('rem').value,color:draft.color,attachments:draft.attachments||[]};
+  const toSecure=f('secure').checked,baseId=draft.baseId||draft.id;
+  const base=S.events.find(x=>x.id===baseId)||S.secure.find(x=>x.id===baseId)||null;
+  const wasSecure=!!(base&&S.secure.includes(base));
+  let msg=toSecure?'Enregistré dans le coffre':'Événement enregistré',go=start;
+  if(!base||!base.rec){
+    const ev=plainEv({...(base||{}),...fields,id:base?base.id:draft.id});
+    if(rec){ev.rec=rec;if(!firstOnRule(ev))return;go=ev.start}else delete ev.rec;
+    if(toSecure)forgetPhoneEvent(ev);
+    putEv(ev,toSecure);
+  }else{
+    const k=draft.occ||base.start.slice(0,10),viaOcc=!!draft.occ;
+    const ruleChanged=repTouched&&!sameRule(rec,base.rec);
+    if(viaOcc&&!ruleChanged&&toSecure===wasSecure&&fieldsSig(fields)===editorOrig){closeSheet();toast('Aucune modification');return}
+    let scope='all';
+    if(viaOcc){
+      const opts=[];
+      if(!ruleChanged)opts.push(['one','Cette date seulement']);
+      if(!isFirstOcc(base,k))opts.push(['following','Cette date et les suivantes']);
+      opts.push(['all','Toutes les dates de la série']);
+      scope=opts.length>1?await askChoice('Modifier un événement répété',recText(base.rec,base.start)+'.',opts):opts[0][0];
+      if(!scope)return;
+    }
+    if(scope==='one'){
+      const one=plainEv({...fields,id:uid(),fromSeries:base.id,occKey:k});
+      if(base.uid)one.seriesUid=base.uid;
+      addEx(base,k);putEv(one,toSecure);
+      if(!hasAny(base))removeIds([base.id]);
+      msg='Cette date a été modifiée';
+    }else if(scope==='following'){
+      const before=recurKeys(base,parseYMD(base.start.slice(0,10)),addDays(parseYMD(k),-1),Infinity,true).length;
+      const oldEnd=base.rec.end||{type:'never'};
+      const ns=plainEv({...fields,id:uid()});
+      if(rec){
+        const r2={...rec};
+        if(oldEnd.type==='count'&&JSON.stringify(rec.end)===JSON.stringify(oldEnd))r2.end={type:'count',count:Math.max(1,oldEnd.count-before)};
+        r2.ex=sd===k?(base.rec.ex||[]).filter(x=>x>k):[];
+        ns.rec=r2;if(!firstOnRule(ns))return;go=ns.start;
+      }
+      cutSeries(base,k,ns.rec?ns.id:null);
+      putEv(ns,toSecure);
+      msg='Cette date et les suivantes ont été modifiées';
+    }else{
+      const ev=plainEv({...base,...fields});
+      if(rec){
+        const delta=daysBetween(parseYMD(k),parseYMD(sd)),span=daysBetween(parseYMD(sd),parseYMD(end.slice(0,10))),nb=addDays(parseYMD(base.start.slice(0,10)),delta);
+        ev.start=ymd(nb)+start.slice(10);ev.end=ymd(addDays(nb,span))+end.slice(10);
+        ev.rec={...rec,ex:(base.rec.ex||[]).map(x=>ymd(addDays(parseYMD(x),delta)))};
+        if(!firstOnRule(ev))return;
+        if(delta)allStored().forEach(x=>{if(x.fromSeries===base.id&&isKey(x.occKey))x.occKey=ymd(addDays(parseYMD(x.occKey),delta))});
+      }else delete ev.rec;
+      putEv(ev,toSecure);
+      msg=rec?'Toute la série a été modifiée':'La répétition a été retirée';
+    }
+  }
+  await saveEvents();await saveVault();
+  play(S.settings.sound);closeSheet();toast(msg);
+  S.cur=parseYMD(go.slice(0,10));render();
 }
 async function deleteEvent(id){
   const e=findEv(id);if(!e)return;
-  if(!await askConfirm(`Supprimer « ${e.title} » ? Cette action est définitive.`,'Supprimer'))return;
-  const wasSecure=!!S.secure.find(x=>x.id===id);
-  forgetPhoneEvent(e);
-  S.events=S.events.filter(x=>x.id!==id);S.secure=S.secure.filter(x=>x.id!==id);
-  await saveEvents();if(wasSecure)await saveVault();
-  closeSheet();render();toast('Événement supprimé');
+  const base=e.occ?baseOf(id):null;
+  let msg='Événement supprimé';
+  if(base&&base.rec){
+    const k=e.occ,opts=[['one','Cette date seulement']];
+    if(!isFirstOcc(base,k))opts.push(['following','Cette date et les suivantes']);
+    opts.push(['all','Toutes les dates de la série']);
+    const c=await askChoice(`Supprimer « ${base.title} » ?`,recText(base.rec,base.start)+'.',opts,true);
+    if(!c)return;
+    if(c==='one'){addEx(base,k);if(!hasAny(base))removeIds([base.id]);msg='Cette date a été supprimée'}
+    else if(c==='following'){cutSeries(base,k);msg='Cette date et les suivantes ont été supprimées'}
+    else{removeSeries(base);msg='La série a été supprimée'}
+  }else{
+    if(!await askConfirm(e.rec?`Supprimer toute la série « ${e.title} » ? Cette action est définitive.`:`Supprimer « ${e.title} » ? Cette action est définitive.`,'Supprimer'))return;
+    forgetPhoneEvent(e);
+    if(e.rec){removeSeries(e);msg='La série a été supprimée'}else removeIds([e.id]);
+  }
+  await saveEvents();await saveVault();
+  closeSheet();render();toast(msg);
 }
 async function clearSamples(){
   if(!await askConfirm('Retirer tous les événements d’exemple ?','Retirer'))return;
@@ -852,11 +1257,12 @@ async function clearSamples(){
 /* ---------- détail ---------- */
 function openDetail(id){
   const e=findEv(id);
-  if(!e){if(S.vault&&S.vault.meta&&S.vault.meta.some(m=>m.id===id))openVault();return}
-  const secure=!!S.secure.find(x=>x.id===id),rem=REMIND.find(r=>r[0]===(e.reminder||0));
+  if(!e){if(S.vault&&S.vault.meta&&S.vault.meta.some(m=>m.id===baseIdOf(id)))openVault();return}
+  const secure=S.secure.some(x=>x.id===baseIdOf(id)),rem=REMIND.find(r=>r[0]===(e.reminder||0));
   openSheet(`<div class="d-head" style="--c:${safeColor(e.color)}"><span class="d-dot"></span><h2>${esc(e.title)}</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></div>
     <div class="tags">${secure?`<span class="pill ok">Coffre · chiffré</span>`:''}${e.sample?'<span class="pill">Exemple</span>':''}</div>
     <div class="meta"><div>${I.clock}<span>${esc(whenText(e))}</span></div>
+    ${e.rec?`<div>${I.repeat}<span>${esc(recText(e.rec,e.start))}</span></div>`:''}
     ${e.location?`<div>${I.pin}<span>${esc(e.location)}</span></div>`:''}
     ${e.reminder?`<div>${I.bell}<span>Rappel ${esc(rem?rem[1].toLowerCase():'')}</span></div>`:''}</div>
     ${e.notes?`<p class="notes">${esc(e.notes)}</p>`:''}
@@ -886,13 +1292,15 @@ function openAtt(a){
 function closeLightbox(){const lb=$('#lightbox');lb.hidden=true;lb.innerHTML=''}
 
 /* ---------- partage rapide ---------- */
-function shareText(e){return `${e.title}\n${whenText(e)}${e.location?'\nLieu : '+e.location:''}${e.notes?'\n\n'+e.notes:''}\n\n— partagé depuis Orbite`}
+function shareText(e){return `${e.title}\n${whenText(e)}${e.rec?'\nRépétition : '+recText(e.rec,e.start):''}${e.location?'\nLieu : '+e.location:''}${e.notes?'\n\n'+e.notes:''}\n\n— partagé depuis Orbite`}
 function toICS(list){
   const f=d=>`${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00Z`;
-  const fd=d=>`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
   const ei=s=>String(s||'').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
   const o=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Orbite//Agenda//FR','CALSCALE:GREGORIAN'];
-  for(const e of list){const[s,en]=range(e);o.push('BEGIN:VEVENT',`UID:${e.id}@orbite`,`DTSTAMP:${f(new Date())}`,...(e.allDay?[`DTSTART;VALUE=DATE:${fd(s)}`,`DTEND;VALUE=DATE:${fd(en)}`]:[`DTSTART:${f(s)}`,`DTEND:${f(en)}`]),`SUMMARY:${ei(e.title)}`);
+  for(const x of list){
+    const e=x.occ&&baseOf(x.id)?baseOf(x.id):x;   // une date d'une série : on partage toute la série
+    const[s,en]=range(e);o.push('BEGIN:VEVENT',`UID:${e.id}@orbite`,`DTSTAMP:${f(new Date())}`,...(e.allDay?[`DTSTART;VALUE=DATE:${icsD(s)}`,`DTEND;VALUE=DATE:${icsD(en)}`]:[`DTSTART:${f(s)}`,`DTEND:${f(en)}`]),`SUMMARY:${ei(e.title)}`);
+    if(e.rec){o.push('RRULE:'+recToRRULE(e.rec,e));for(const k of e.rec.ex||[])o.push(e.allDay?`EXDATE;VALUE=DATE:${icsD(parseYMD(k))}`:`EXDATE:${f(range(occAt(e,k))[0])}`)}
     if(e.location)o.push(`LOCATION:${ei(e.location)}`);if(e.notes)o.push(`DESCRIPTION:${ei(e.notes)}`);o.push('END:VEVENT')}
   o.push('END:VCALENDAR');return o.join('\r\n');
 }
@@ -919,32 +1327,51 @@ function openShareSheet(e){
 function parseICS(text){
   const lines=text.replace(/\r?\n[ \t]/g,'').split(/\r?\n/);
   const raw=[];let cur=null,inAlarm=false,method='';
+  // premier « : » hors guillemets (Outlook écrit par exemple TZID="(UTC+01:00) Paris")
+  const colon=ln=>{let q=false;for(let j=0;j<ln.length;j++){const c=ln[j];if(c==='"')q=!q;else if(c===':'&&!q)return j}return -1};
   for(const ln of lines){
-    if(!cur&&/^METHOD:/i.test(ln)){method=ln.slice(7).trim().toUpperCase();continue}
-    if(ln==='BEGIN:VEVENT'){cur={};continue}
-    if(ln==='END:VEVENT'){if(cur&&cur.DTSTART)raw.push(cur);cur=null;continue}
-    if(ln==='BEGIN:VALARM'){inAlarm=true;continue}if(ln==='END:VALARM'){inAlarm=false;continue}
+    const T=ln.trim().toUpperCase();
+    if(!cur&&T.startsWith('METHOD:')){method=T.slice(7).trim();continue}
+    if(T==='BEGIN:VEVENT'){cur={};continue}
+    if(T==='END:VEVENT'){if(cur&&cur.DTSTART)raw.push(cur);cur=null;continue}
+    if(T==='BEGIN:VALARM'){inAlarm=true;continue}if(T==='END:VALARM'){inAlarm=false;continue}
     if(!cur||inAlarm)continue;
-    const i=ln.indexOf(':');if(i<0)continue;
-    const name=ln.slice(0,i).split(';')[0].toUpperCase();if(!(name in cur))cur[name]=ln.slice(i+1);
+    const i=colon(ln);if(i<0)continue;
+    const name=ln.slice(0,i).split(';')[0].trim().toUpperCase(),val=ln.slice(i+1);
+    if(name==='EXDATE'){(cur.EXDATES||(cur.EXDATES=[])).push(...val.split(','));continue}
+    if(!(name in cur))cur[name]=val;
   }
   const un=s=>(s||'').replace(/\\n/gi,'\n').replace(/\\([,;\\])/g,'$1').trim();
   const dt=v=>{v=(v||'').trim();if(/^\d{8}$/.test(v))return{allDay:true,ds:`${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}`};
     const m=v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?$/);if(!m)return null;
     return{allDay:false,d:m[7]?new Date(Date.UTC(+m[1],m[2]-1,+m[3],+m[4],+m[5])):new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5])}};
   const dur=v=>{const m=(v||'').match(/P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/);if(!m)return 3600000;return(((+m[1]||0)*7+(+m[2]||0))*24*60+(+m[3]||0)*60+(+m[4]||0))*60000||3600000};
-  let recurring=0;const out=[];
+  let unsupported=0;const out=[];
   for(const v of raw){
     const s=dt(v.DTSTART);if(!s)continue;const e=v.DTEND?dt(v.DTEND):null;
     const ev={id:uid(),title:un(v.SUMMARY)||'(Sans titre)',location:un(v.LOCATION),notes:un(v.DESCRIPTION),color:S.settings.accent,reminder:0,attachments:[],allDay:s.allDay};
     if(s.allDay){ev.start=s.ds;let end=s.ds;if(e&&e.allDay){const x=ymd(addDays(parseYMD(e.ds),-1));if(x>end)end=x}ev.end=end}
     else{ev.start=lt(s.d);ev.end=lt(e&&!e.allDay?e.d:new Date(s.d.getTime()+dur(v.DURATION)))}
-    if(v.RRULE)recurring++;
-    ev.uid=un(v.UID);ev.icsCancelled=/CANCELLED/i.test(v.STATUS||'');ev.recurring=!!v.RRULE;
+    ev.uid=un(v.UID);ev.icsCancelled=/CANCELLED/i.test(v.STATUS||'');
+    if(v['RECURRENCE-ID']){const k=icsDateKey(v['RECURRENCE-ID']);if(k)ev.recId=k}
+    if(v.RRULE&&!ev.recId){
+      const r=rruleToRec(v.RRULE,ev.start.slice(0,10));
+      if(r){r.ex=(v.EXDATES||[]).map(icsDateKey).filter(Boolean);ev.rec=normRec(r,ev.start.slice(0,10))}
+      else{unsupported++;ev.recurring=true}
+    }
     out.push(ev);
   }
-  return{events:out,recurring,method};
+  // dates modifiées ou annulées d'une série présente dans le même fichier
+  const masters=new Map(out.filter(e=>e.rec&&e.uid).map(e=>[e.uid,e]));
+  const events=[];
+  for(const ev of out){
+    const m=ev.recId&&ev.uid?masters.get(ev.uid):null;
+    if(m){addEx(m,ev.recId);if(!ev.icsCancelled){const one={...ev,fromSeries:m.id,occKey:ev.recId,seriesUid:ev.uid};delete one.uid;delete one.recId;events.push(one)}continue}
+    events.push(ev);
+  }
+  return{events,recurring:unsupported,method};
 }
+const cleanIcs=e=>{const c={...e};delete c.icsCancelled;delete c.recurring;delete c.recId;return c};
 async function importFile(file){
   if(!file)return;
   let txt;try{txt=await file.text()}catch(e){toast('Lecture du fichier impossible');return}
@@ -952,16 +1379,17 @@ async function importFile(file){
   try{
     const t=txt.trim();
     if(/\.json$/i.test(file.name)||t.startsWith('[')||t.startsWith('{')){const d=JSON.parse(t);const arr=Array.isArray(d)?d:(d.events||[]);
-      res={recurring:0,events:arr.filter(x=>x&&x.title&&x.start).map(x=>({id:uid(),title:String(x.title),allDay:!!x.allDay,start:String(x.start),end:String(x.end||x.start),color:safeColor(x.color),location:String(x.location||''),notes:String(x.notes||''),reminder:+x.reminder||0,attachments:Array.isArray(x.attachments)?x.attachments:[]}))}}
+      res={recurring:0,events:arr.filter(x=>x&&x.title&&x.start).map(x=>({id:uid(),title:String(x.title),allDay:!!x.allDay,start:String(x.start),end:String(x.end||x.start),color:safeColor(x.color),location:String(x.location||''),notes:String(x.notes||''),reminder:+x.reminder||0,attachments:Array.isArray(x.attachments)?x.attachments:[],rec:normRec(x.rec,String(x.start).slice(0,10))||undefined}))}}
     else if(t.includes('BEGIN:VCALENDAR'))res=parseICS(t);
     else{toast('Format non reconnu · choisissez un fichier .ics ou une sauvegarde Orbite');return}
   }catch(e){toast('Fichier illisible : '+(e.message||'format inattendu'));return}
   const seen=new Set(S.events.map(e=>e.title+'|'+e.start));
-  const fresh=res.events.filter(e=>!seen.has(e.title+'|'+e.start)).map(e=>{const c={...e};delete c.icsCancelled;delete c.recurring;return c});
+  const fresh=res.events.filter(e=>!seen.has(e.title+'|'+e.start)).map(cleanIcs);
+  const nrec=fresh.filter(e=>e.rec).length;
   const hadSamples=S.events.some(e=>e.sample);
   S.events=S.events.filter(e=>!e.sample).concat(fresh);
   await saveEvents();S.lastKey='';render();play(S.settings.sound);
-  toast(`${fresh.length} événement${fresh.length>1?'s':''} importé${fresh.length>1?'s':''}${res.events.length-fresh.length?` · ${res.events.length-fresh.length} doublon(s) ignoré(s)`:''}${res.recurring?` · ${res.recurring} récurrent(s) importé(s) une fois`:''}${hadSamples?' · exemples retirés':''}`,6000);
+  toast(`${fresh.length} événement${fresh.length>1?'s':''} importé${fresh.length>1?'s':''}${nrec?` dont ${nrec} répété${nrec>1?'s':''}`:''}${res.events.length-fresh.length?` · ${res.events.length-fresh.length} doublon(s) ignoré(s)`:''}${res.recurring?` · ${res.recurring} répétition(s) non reconnue(s) : première date seulement`:''}${hadSamples?' · exemples retirés':''}`,6000);
   if(S.sheetKind==='settings')openSettings();
 }
 $('#gImport').onchange=async e=>{await importFile(e.target.files[0]);e.target.value=''};
@@ -973,7 +1401,7 @@ const rand=n=>crypto.getRandomValues(new Uint8Array(n));
 async function deriveKey(pin,salt){const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:200000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},true,['encrypt','decrypt'])}
 async function encJSON(key,obj){const iv=rand(12);const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify(obj)));return{iv:b64(iv),ct:b64(new Uint8Array(ct))}}
 async function decJSON(key,box){const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:ub64(box.iv)},key,ub64(box.ct));return JSON.parse(new TextDecoder().decode(pt))}
-async function saveVault(){if(!S.vaultKey||!S.vault)return;S.vault.box=await encJSON(S.vaultKey,S.secure);S.vault.meta=S.secure.map(e=>({id:e.id,start:e.start,end:e.end,allDay:e.allDay}));await DB.set('vault',S.vault)}
+async function saveVault(){if(!S.vaultKey||!S.vault)return;S.vault.box=await encJSON(S.vaultKey,S.secure);S.vault.meta=S.secure.map(e=>({id:e.id,start:e.start,end:e.end,allDay:e.allDay,rec:e.rec||undefined}));await DB.set('vault',S.vault)}
 function updateVaultBtn(){const b=$('#vaultBtn');b.innerHTML=S.vaultKey?I.unlock:I.lock;b.classList.toggle('open',!!S.vaultKey);b.setAttribute('aria-label',S.vaultKey?'Coffre ouvert':'Coffre sécurisé')}
 let failCount=0,blockUntil=0;
 function openVault(){if(!window.crypto||!crypto.subtle){toast('Chiffrement indisponible sur ce navigateur');return}if(!S.vault)vaultSetup();else if(!S.vaultKey)vaultUnlock();else vaultList()}
@@ -1141,8 +1569,8 @@ function openSettings(){
 
 /* ---------- rappels ---------- */
 function checkReminders(){
-  const now=Date.now();
-  for(const e of VIS){
+  const now=Date.now(),t=new Date(),t0=new Date(t.getFullYear(),t.getMonth(),t.getDate());
+  for(const e of expandList(visible(),addDays(t0,-1),addDays(t0,2))){
     if(e.locked||!e.reminder)continue;
     const s=range(e)[0].getTime(),trig=s-e.reminder*60000,key=e.id+'@'+e.start;
     if(now>=trig&&now<s&&!S.fired.has(key)){S.fired.add(key);play(S.settings.sound);toast(`Rappel · ${e.title} à ${fmtT(new Date(s))}`,8000);notify(`Rappel · ${e.title}`,`${fmtT(new Date(s))}${e.location?' · '+e.location:''}`)}
@@ -1152,6 +1580,7 @@ function checkReminders(){
 /* ---------- bouton retour Android ---------- */
 window.__back=()=>{
   if(!$('#lightbox').hidden){closeLightbox();return true}
+  if(!$('#choiceWrap').hidden){$('#choiceWrap .btn[data-cancel]').click();return true}
   if(!$('#confirmWrap').hidden){const c=$('#confirmWrap [data-cancel].btn');if(c)c.click();return true}
   if(!$('#sheetWrap').hidden){closeSheet();return true}
   if(S.view==='day'){S.view='month';render();return true}
@@ -1413,22 +1842,43 @@ function icsInvite(text){
   const evs=res.events||[];
   if(!evs.length){toast('Ce fichier ne contient aucun rendez-vous lisible',6000);report({ok:false,error:'vide'});return}
   const find=e=>S.events.find(x=>(e.uid&&x.uid===e.uid)||(x.title===e.title&&x.start===e.start));
-  const clean=e=>{const c={...e};delete c.icsCancelled;delete c.recurring;return c};
   const done=async(msg,day)=>{await saveEvents();if(day){S.cur=parseYMD(day.slice(0,10))}S.lastKey='';render();closeSheet();play(S.settings.sound);toast(msg,5000)};
-  if(/CANCEL/.test(res.method||'')||evs.every(e=>e.icsCancelled)){
+  const cancelled=/CANCEL/.test(res.method||'')||evs.every(e=>e.icsCancelled);
+  // une seule date d'une série déjà dans Orbite, modifiée ou annulée par l'organisateur
+  if(evs.length===1&&evs[0].recId){
+    const e=evs[0],m=e.uid?S.events.find(x=>x.uid===e.uid&&x.rec):null;
+    if(m){
+      const k=e.recId,prev=S.events.find(x=>x.fromSeries===m.id&&x.occKey===k);
+      const apply=()=>{addEx(m,k);
+        if(cancelled){if(prev)removeIds([prev.id])}
+        else{const one=cleanIcs(e);delete one.uid;one.fromSeries=m.id;one.occKey=k;one.seriesUid=m.uid;
+          if(prev)Object.assign(prev,{title:one.title,start:one.start,end:one.end,allDay:one.allDay,location:one.location,notes:one.notes||prev.notes});else S.events.push(one)}};
+      if(auto){apply();saveEvents();render();report({ok:true,action:cancelled?'date annulée':'date modifiée',title:e.title,start:e.start,key:k});return}
+      openSheet(`<header class="sh-h"><h2>${cancelled?'Une date annulée':'Une date modifiée'}</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
+      <div class="d-head" style="--c:${safeColor(m.color)};margin-bottom:10px"><span class="d-dot"></span><h2>${esc(m.title)}</h2></div>
+      <div class="meta"><div>${I.repeat}<span>${esc(recText(m.rec,m.start))}</span></div><div>${I.clock}<span>${cancelled?'Date annulée : '+esc(cap(fmtDate(parseYMD(k)))):esc(whenText(e))}</span></div>${!cancelled&&e.location?`<div>${I.pin}<span>${esc(e.location)}</span></div>`:''}</div>
+      <p class="hint" style="margin-bottom:16px">L’organisateur a ${cancelled?'annulé':'modifié'} cette date ; les autres dates de la série ne changent pas.</p>
+      <footer class="sh-f"><span class="sp"></span><button class="btn ghost" data-close>Fermer</button><button class="btn ${cancelled?'danger':'pri'}" id="ic-go">${cancelled?'Retirer cette date':'Mettre à jour cette date'}</button></footer>`,'ics',sh=>{
+        sh.querySelector('#ic-go').onclick=()=>{apply();done(cancelled?'Date retirée de l’agenda':'Date mise à jour',cancelled?k:e.start)};
+      });
+      return;
+    }
+  }
+  if(cancelled){
     const targets=[...new Set(evs.map(find).filter(Boolean))];
-    const removeAll=()=>{const ids=new Set(targets.map(t=>t.id));targets.forEach(forgetPhoneEvent);S.events=S.events.filter(x=>!ids.has(x.id))};
+    const series=targets.some(t=>t.rec);
+    const removeAll=()=>{targets.forEach(forgetPhoneEvent);for(const t of targets){if(t.rec)removeSeries(t);else removeIds([t.id])}};
     if(auto){removeAll();saveEvents();render();report({ok:true,action:'annulation',count:targets.length});return}
     openSheet(`<header class="sh-h"><h2>Annulation reçue</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
     <div class="meta"><div>${I.clock}<span>${esc(evs[0].title)} · ${esc(whenText(evs[0]))}</span></div></div>
-    <p class="hint" style="margin-bottom:16px">${targets.length?'L’organisateur a annulé ce rendez-vous.':'Ce rendez-vous n’est pas dans Orbite : il n’y a rien à retirer.'}</p>
-    <footer class="sh-f"><span class="sp"></span><button class="btn ghost" data-close>Fermer</button>${targets.length?'<button class="btn danger" id="ic-go">Retirer de l’agenda</button>':''}</footer>`,'ics',sh=>{
-      const g=sh.querySelector('#ic-go');if(g)g.onclick=()=>{removeAll();done('Rendez-vous retiré de l’agenda')};
+    <p class="hint" style="margin-bottom:16px">${targets.length?(series?'L’organisateur a annulé toute la série.':'L’organisateur a annulé ce rendez-vous.'):'Ce rendez-vous n’est pas dans Orbite : il n’y a rien à retirer.'}</p>
+    <footer class="sh-f"><span class="sp"></span><button class="btn ghost" data-close>Fermer</button>${targets.length?`<button class="btn danger" id="ic-go">${series?'Retirer toute la série':'Retirer de l’agenda'}</button>`:''}</footer>`,'ics',sh=>{
+      const g=sh.querySelector('#ic-go');if(g)g.onclick=()=>{removeAll();done(series?'Série retirée de l’agenda':'Rendez-vous retiré de l’agenda')};
     });
     return;
   }
   if(evs.length>1){
-    const fresh=evs.filter(e=>!find(e)).map(clean);
+    const fresh=evs.filter(e=>!find(e)).map(cleanIcs);
     if(auto){S.events=S.events.concat(fresh);saveEvents();render();report({ok:true,action:'import',count:fresh.length});return}
     openSheet(`<header class="sh-h"><h2>${evs.length} rendez-vous dans ce fichier</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
     <p class="hint" style="margin-bottom:16px">${fresh.length?`${fresh.length} sont nouveaux pour Orbite.`:'Ils sont tous déjà dans Orbite.'}</p>
@@ -1437,19 +1887,52 @@ function icsInvite(text){
     });
     return;
   }
-  const e=evs[0],ex=find(e);
-  const same=ex&&ex.start===e.start&&ex.end===e.end&&ex.title===e.title&&(ex.location||'')===(e.location||'');
-  const apply=()=>{if(!ex)S.events.push(clean(e));else if(!same)Object.assign(ex,{title:e.title,start:e.start,end:e.end,allDay:e.allDay,location:e.location,notes:e.notes||ex.notes,uid:e.uid||ex.uid})};
-  if(auto){apply();saveEvents();render();report({ok:true,action:ex?(same?'déjà':'mise à jour'):'ajout',title:e.title,start:e.start});return}
+  const e=evs[0],ex=find(e),byUid=!!(ex&&e.uid&&ex.uid===e.uid);
+  const same=ex&&ex.start===e.start&&ex.end===e.end&&ex.title===e.title&&(ex.location||'')===(e.location||'')&&(!byUid||sameRule(ex.rec,e.rec));
+  const apply=()=>{if(!ex)S.events.push(cleanIcs(e));else if(!same){Object.assign(ex,{title:e.title,start:e.start,end:e.end,allDay:e.allDay,location:e.location,notes:e.notes||ex.notes,uid:e.uid||ex.uid});
+    if(byUid){if(e.rec)ex.rec={...e.rec,ex:[...new Set([...(e.rec.ex||[]),...((ex.rec&&ex.rec.ex)||[])])].sort()};else delete ex.rec}}};
+  const s0=parseYMD(e.start.slice(0,10));
+  if(auto){apply();saveEvents();render();report({ok:true,action:ex?(same?'déjà':'mise à jour'):'ajout',title:e.title,start:e.start,rec:e.rec?e.rec.freq:'',occ:e.rec?recurKeys(e,s0,addDays(s0,800)).length:1});return}
   openSheet(`<header class="sh-h"><h2>${ex?(same?'Déjà dans votre agenda':'Invitation modifiée'):'Invitation reçue'}</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
   <div class="d-head" style="--c:${safeColor(e.color)};margin-bottom:10px"><span class="d-dot"></span><h2>${esc(e.title)}</h2></div>
-  <div class="meta"><div>${I.clock}<span>${esc(whenText(e))}</span></div>${e.location?`<div>${I.pin}<span>${esc(e.location)}</span></div>`:''}</div>
+  <div class="meta"><div>${I.clock}<span>${e.rec?'Première date : ':''}${esc(whenText(e))}</span></div>${e.rec?`<div>${I.repeat}<span>${esc(recText(e.rec,e.start))}</span></div>`:''}${e.location?`<div>${I.pin}<span>${esc(e.location)}</span></div>`:''}</div>
   ${e.notes?`<p class="notes">${esc(e.notes.slice(0,400))}${e.notes.length>400?'…':''}</p>`:''}
-  ${e.recurring?'<p class="hint" style="margin-bottom:12px">Rendez-vous répété : seule la première date est ajoutée. S’il est aussi dans votre agenda Google ou Outlook, toutes les dates arriveront automatiquement.</p>':''}
+  ${e.recurring?'<p class="hint" style="margin-bottom:12px">Ce rendez-vous se répète d’une façon qu’Orbite ne sait pas encore reproduire : seule la première date est ajoutée. S’il est aussi dans votre agenda Google ou Outlook, toutes les dates arriveront automatiquement.</p>':''}
   <footer class="sh-f"><span class="sp"></span><button class="btn ghost" data-close>Fermer</button>${same?'<button class="btn pri" id="ic-see">Voir dans l’agenda</button>':`<button class="btn pri" id="ic-go">${ex?'Mettre à jour':'Ajouter à l’agenda'}</button>`}</footer>`,'ics',sh=>{
     const g=sh.querySelector('#ic-go');if(g)g.onclick=()=>{apply();done(ex?'Rendez-vous mis à jour':`Ajouté : ${e.title} · ${shortWhen(e)}`,e.start)};
     const v=sh.querySelector('#ic-see');if(v)v.onclick=()=>{S.cur=parseYMD(e.start.slice(0,10));S.view='day';closeSheet();render()};
   });
+}
+
+/* ---------- contrôles de la répétition (auto-test) ---------- */
+function recurSelfCheck(){
+  const fails=[];
+  const mk=(start,end,r)=>({id:'t',title:'t',start,end,allDay:!start.includes('T'),rec:normRec(r,start.slice(0,10))});
+  const keys=(ev,a,b,max)=>recurKeys(ev,parseYMD(a),parseYMD(b),max);
+  const eq=(name,got,exp)=>{if(JSON.stringify(got)!==JSON.stringify(exp))fails.push(name+' : '+JSON.stringify(got))};
+  try{
+    const w=mk('2026-10-20T10:00','2026-10-20T11:00',{freq:'week',interval:1,days:[2,4]});
+    eq('semaine et heure d’hiver',keys(w,'2026-10-19','2026-10-31'),['2026-10-20','2026-10-22','2026-10-27','2026-10-29']);
+    const o=occAt(w,'2026-10-27'),[os,oe]=range(o);
+    if(o.start!=='2026-10-27T10:00'||os.getHours()!==10||oe.getHours()!==11)fails.push('heure après le changement d’heure : '+o.start);
+    eq('le 31 du mois',keys(mk('2026-01-31T09:00','2026-01-31T10:00',{freq:'month',mode:'date',md:31,end:{type:'count',count:6}}),'2026-01-01','2027-12-31'),['2026-01-31','2026-03-31','2026-05-31','2026-07-31','2026-08-31','2026-10-31']);
+    eq('dernier vendredi',keys(mk('2026-01-30','2026-01-30',{freq:'month',mode:'last',wd:5}),'2026-01-01','2026-04-30'),['2026-01-30','2026-02-27','2026-03-27','2026-04-24']);
+    eq('29 février',keys(mk('2028-02-29','2028-02-29',{freq:'year'}),'2028-01-01','2036-12-31'),['2028-02-29','2032-02-29','2036-02-29']);
+    eq('toutes les 2 semaines',keys(mk('2026-11-19T18:00','2026-11-19T19:00',{freq:'week',interval:2,days:[1,4]}),'2026-11-01','2026-12-20'),['2026-11-19','2026-11-30','2026-12-03','2026-12-14','2026-12-17']);
+    eq('tous les 3 jours',keys(mk('2026-11-17','2026-11-17',{freq:'day',interval:3,end:{type:'until',until:'2026-11-30'}}),'2026-11-01','2026-12-31'),['2026-11-17','2026-11-20','2026-11-23','2026-11-26','2026-11-29']);
+    eq('date supprimée',keys(mk('2026-11-17T08:00','2026-11-17T09:00',{freq:'week',days:[2],end:{type:'count',count:4},ex:['2026-11-24']}),'2026-11-01','2027-01-31'),['2026-11-17','2026-12-01','2026-12-08']);
+    eq('3e mardi',keys(mk('2026-11-17','2026-11-17',{freq:'month',mode:'nth',nth:3,wd:2}),'2026-11-01','2027-01-31'),['2026-11-17','2026-12-15','2027-01-19']);
+    const we=expandList([mk('2026-11-21','2026-11-22',{freq:'week',days:[6]})],parseYMD('2026-11-29'),parseYMD('2026-11-29'));
+    eq('week-end sur deux jours',we.map(e=>e.start+'/'+e.end),['2026-11-28/2026-11-29']);
+    const t0=performance.now();
+    eq('série commencée en 2010',keys(mk('2010-01-01T07:00','2010-01-01T07:30',{freq:'day'}),'2026-11-17','2026-11-18'),['2026-11-17','2026-11-18']);
+    if(performance.now()-t0>250)fails.push('calcul trop lent');
+    for(const [st,r] of [['2026-11-19T18:00',{freq:'week',interval:2,days:[1,4],end:{type:'count',count:5}}],['2026-01-30',{freq:'month',mode:'last',wd:5,end:{type:'until',until:'2026-12-31'}}],['2026-11-17',{freq:'month',mode:'nth',nth:3,wd:2}],['2026-01-31T09:00',{freq:'month',mode:'date',md:31}],['2028-02-29',{freq:'year',interval:4}],['2026-11-17',{freq:'day',interval:3}]]){
+      const ev=mk(st,st,r),rr=recToRRULE(ev.rec,ev),back=normRec(rruleToRec(rr,st.slice(0,10)),st.slice(0,10));
+      if(!sameRule(back,ev.rec))fails.push('RRULE '+rr);
+    }
+  }catch(e){fails.push('erreur : '+String(e&&e.message||e))}
+  return{pass:!fails.length,fails:fails.slice(0,6)};
 }
 
 /* ---------- auto-test (lancé uniquement par le test automatique) ---------- */
@@ -1460,6 +1943,7 @@ window.__orbiteSelftest=async()=>{
     out.db=!!DB.db;
     out.subtle=!!(window.crypto&&crypto.subtle);
     const k=await deriveKey('2468',rand(16));out.crypto=(await decJSON(k,await encJSON(k,{v:42}))).v===42;
+    out.recur=recurSelfCheck();
     out.native=NATIVE;
     if(NATIVE){
       out.perm=OrbiteNative.hasCalendarPermission();
@@ -1475,7 +1959,7 @@ window.__orbiteSelftest=async()=>{
     for(const v of ['day','week','month','year']){S.view=v;render()}
     out.render=true;
     out.errs=window.__errs.slice(0,5);
-    out.pass=out.db&&out.subtle&&out.crypto&&out.render&&!out.errs.length&&(!NATIVE||(out.import.ok&&out.reimport.ok&&out.reimport.added===0&&out.follow&&out.samples===0&&out.allDayOk&&out.timedOk));
+    out.pass=out.db&&out.subtle&&out.crypto&&out.recur.pass&&out.render&&!out.errs.length&&(!NATIVE||(out.import.ok&&out.reimport.ok&&out.reimport.added===0&&out.follow&&out.samples===0&&out.allDayOk&&out.timedOk));
   }catch(e){out.error=String(e&&e.stack||e).slice(0,600)}
   const txt=JSON.stringify(out);
   try{if(NATIVE)OrbiteNative.selftestResult('RESULT '+txt)}catch(e){}

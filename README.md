@@ -18,6 +18,10 @@ Dans Orbite, touchez **Importer mon ancien agenda** (ou Paramètres › Importer
 - Gmail et Outlook placent les invitations reçues par mail dans l’agenda du téléphone : elles arrivent donc seules dans Orbite.
 - Autre boîte mail (Orange, Free, SFR, Yahoo…) : ouvrez la pièce jointe de l’invitation (fichier .ics) et choisissez Orbite.
 
+## Répéter un événement
+
+Dans l’éditeur, le champ **Répétition** propose : tous les jours, du lundi au vendredi, toutes les semaines (jours au choix), tous les mois (le 17, le 3e mardi ou le dernier vendredi), tous les ans, avec un intervalle (toutes les 2 semaines…) et une fin (jamais, à une date, après X fois). Pour modifier ou supprimer une date d’une série : « Cette date seulement », « Cette date et les suivantes » ou « Toutes les dates de la série ». Les invitations répétées reçues par mail (.ics) sont reprises avec toutes leurs dates.
+
 ## Fonctionnement
 
 Chaque envoi sur la branche `main` fabrique automatiquement un nouvel APK, l’installe et le teste sur un téléphone Android virtuel (onglet **Actions**), puis le publie dans **Releases** seulement si le test réussit.

@@ -5,6 +5,8 @@ import android.annotation.SuppressLint;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
@@ -13,6 +15,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PersistableBundle;
 import android.provider.CalendarContract;
 import android.util.Base64;
 import android.util.Log;
@@ -30,8 +33,6 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
-import androidx.biometric.BiometricManager;
-import androidx.biometric.BiometricPrompt;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
@@ -47,7 +48,6 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.Executor;
 
 /**
  * Orbite — application Android.
@@ -68,6 +68,10 @@ public class MainActivity extends FragmentActivity {
     private ValueCallback<Uri[]> fileCallback;
     private ActivityResultLauncher<String> calendarPermission;
     private boolean selftest;
+    private boolean biotest;
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private String clipSecret;
+    private long clipUntil;
     private ContentObserver calendarObserver;
     private volatile boolean foreground;
     private String pendingIcs;
@@ -83,6 +87,7 @@ public class MainActivity extends FragmentActivity {
                     js("window.__calPerm&&window.__calPerm(" + Boolean.TRUE.equals(granted) + ")");
                 });
         selftest = getIntent() != null && getIntent().getBooleanExtra("orbite_selftest", false);
+        biotest = getIntent() != null && getIntent().getBooleanExtra("orbite_biotest", false);
 
         final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
@@ -110,6 +115,7 @@ public class MainActivity extends FragmentActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 if (selftest) view.evaluateJavascript("window.__selftestMode=true;window.__orbiteSelftest&&window.__orbiteSelftest()", null);
+                else if (biotest) view.evaluateJavascript("window.__selftestMode=true;window.__orbiteBioTest&&window.__orbiteBioTest()", null);
             }
 
             @Override
@@ -176,6 +182,7 @@ public class MainActivity extends FragmentActivity {
     protected void onResume() {
         super.onResume();
         foreground = true;
+        VaultBio.visible = true;
         watchCalendar();
         js("window.__onResume&&window.__onResume()");
     }
@@ -183,7 +190,39 @@ public class MainActivity extends FragmentActivity {
     @Override
     protected void onPause() {
         foreground = false;
+        VaultBio.visible = false;
         super.onPause();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && clipSecret != null && System.currentTimeMillis() >= clipUntil) clearSecretClip();
+    }
+
+    /** Efface du presse-papiers un mot de passe copié depuis le coffre, s'il y est encore. */
+    private void clearSecretClip() {
+        final String secret = clipSecret;
+        if (secret == null) return;
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm == null) { clipSecret = null; return; }
+            ClipData cur = cm.getPrimaryClip();
+            if (cur == null) return; // lecture impossible hors de l'écran : on réessaiera au retour dans Orbite
+            clipSecret = null;
+            if (cur.getItemCount() > 0) {
+                CharSequence t = cur.getItemAt(0).coerceToText(this);
+                if (t != null && secret.contentEquals(t)) {
+                    if (Build.VERSION.SDK_INT >= 28) cm.clearPrimaryClip();
+                    else cm.setPrimaryClip(ClipData.newPlainText("", ""));
+                }
+            }
+        } catch (Exception ignored) { }
+    }
+
+    /** Réponse de l'empreinte vers l'interface (le numéro de demande évite de confondre deux invites). */
+    private void bioReply(int req, boolean ok, String payload) {
+        js("window.__bioReply&&window.__bioReply(" + req + "," + ok + "," + JSONObject.quote(payload == null ? "{}" : payload) + ")");
     }
 
     @Override
@@ -319,43 +358,57 @@ public class MainActivity extends FragmentActivity {
         runOnUiThread(() -> web.evaluateJavascript(code, null));
     }
 
-    private static String quote(String s) {
-        if (s == null) return "''";
-        return "'" + s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ") + "'";
-    }
-
     /** Pont JavaScript ↔ Android */
     private class Bridge {
 
+        /** {"level":0|1|2,"reason":"..."} : 2 = empreinte protégée par le téléphone, 0 = indisponible */
         @JavascriptInterface
-        public boolean hasBiometric() {
-            int r = BiometricManager.from(MainActivity.this)
-                    .canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.BIOMETRIC_WEAK);
-            return r == BiometricManager.BIOMETRIC_SUCCESS;
+        public String bioStatus() {
+            return VaultBio.status(MainActivity.this);
         }
 
         @JavascriptInterface
-        public void biometric(final String title) {
-            runOnUiThread(() -> {
-                Executor ex = ContextCompat.getMainExecutor(MainActivity.this);
-                BiometricPrompt prompt = new BiometricPrompt(MainActivity.this, ex, new BiometricPrompt.AuthenticationCallback() {
-                    @Override
-                    public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
-                        js("window.__bioDone&&window.__bioDone(true,'')");
-                    }
+        public boolean hasBiometric() {
+            return VaultBio.level(MainActivity.this) > 0;
+        }
 
-                    @Override
-                    public void onAuthenticationError(int code, @NonNull CharSequence msg) {
-                        js("window.__bioDone&&window.__bioDone(false," + quote(msg.toString()) + ")");
-                    }
-                });
-                BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
-                        .setTitle(title == null || title.isEmpty() ? "Coffre Orbite" : title)
-                        .setSubtitle("Posez votre doigt sur le capteur")
-                        .setNegativeButtonText("Utiliser mon code")
-                        .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.BIOMETRIC_WEAK)
-                        .build();
-                prompt.authenticate(info);
+        @JavascriptInterface
+        public void bioEnable(final String rawB64, final int req) {
+            runOnUiThread(() -> {
+                if (!foreground) { bioReply(req, false, "{\"error\":\"background\",\"msg\":\"\"}"); return; }
+                VaultBio.enable(MainActivity.this, rawB64, (ok, json) -> bioReply(req, ok, json));
+            });
+        }
+
+        @JavascriptInterface
+        public void bioOpen(final int mode, final String iv, final String ct, final int req) {
+            runOnUiThread(() -> {
+                if (!foreground) { bioReply(req, false, "{\"error\":\"background\",\"msg\":\"\"}"); return; }
+                VaultBio.open(MainActivity.this, mode, iv, ct, (ok, json) -> bioReply(req, ok, json));
+            });
+        }
+
+        @JavascriptInterface
+        public void bioDisable() {
+            VaultBio.disable();
+        }
+
+        /** Copie une clé ou un mot de passe du coffre (marqué « sensible », effacé au bout d'une minute). */
+        @JavascriptInterface
+        public void copySecret(final String text) {
+            runOnUiThread(() -> {
+                try {
+                    ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (cm == null) return;
+                    ClipData clip = ClipData.newPlainText("Orbite", text);
+                    PersistableBundle extras = new PersistableBundle();
+                    extras.putBoolean("android.content.extra.IS_SENSITIVE", true);
+                    clip.getDescription().setExtras(extras);
+                    cm.setPrimaryClip(clip);
+                    clipSecret = text;
+                    clipUntil = System.currentTimeMillis() + 60000;
+                    ui.postDelayed(MainActivity.this::clearSecretClip, 60500);
+                } catch (Exception ignored) { }
             });
         }
 

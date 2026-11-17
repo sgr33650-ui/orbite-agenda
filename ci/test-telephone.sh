@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Test de bout en bout d'Orbite sur un téléphone Android virtuel.
 # 1. installe l'APK  2. crée un agenda de test  3. lance Orbite en mode test
-# 4. vérifie la lecture native de l'agenda, l'import, le stockage, le chiffrement et l'affichage.
+# 4. vérifie la lecture native de l'agenda, l'import, le stockage, le chiffrement et l'affichage
+# 5. vérifie le coffre (verrouillage sans perte de saisie) puis l'ouverture par empreinte digitale.
 set -u
 APK="${1:-Orbite.apk}"
 PKG=com.orbite.agenda
@@ -14,6 +15,8 @@ sleep 3; adb wait-for-device
 adb shell setprop persist.sys.timezone Europe/Paris || true
 TZ_DEV=$(adb shell getprop persist.sys.timezone | tr -d '\r')
 echo "Fuseau du téléphone : $TZ_DEV"
+adb shell svc power stayon true || true
+adb shell settings put system screen_off_timeout 2147483647 || true
 
 echo "== Installation de l'APK"
 adb install -r "$APK" || fail "installation de l'APK"
@@ -61,6 +64,8 @@ echo "$NATIVE_LINE" | grep -q "NATIVE ok=true" || fail "lecture de l'agenda du t
 [ -n "$JS_LINE" ] || fail "l'interface n'a pas répondu au test"
 echo "$JS_LINE" | grep -q '"recur":{"pass":true' || fail "calcul des dates répétées sur le téléphone ($JS_LINE)"
 echo "Dates répétées vérifiées sur le téléphone (changement d'heure, fin de mois, 29 février, dates supprimées)"
+echo "$JS_LINE" | grep -q '"vault":{"pass":true' || fail "coffre sur le téléphone ($JS_LINE)"
+echo "Coffre vérifié sur le téléphone : chiffrement, mauvais code refusé, verrou pendant une saisie sans perte, changement de code"
 echo "$JS_LINE" | grep -q '"pass":true' || fail "auto-test de l'interface ($JS_LINE)"
 if [ "$EXPECT" -gt 0 ]; then
   ADDED=$(echo "$JS_LINE" | grep -o '"added":[0-9]*' | head -n1 | cut -d: -f2)
@@ -144,6 +149,59 @@ echo "$L"
 echo "$L" | grep -q '"rec":"week"' || fail "répétition de l'invitation non reconnue ($L)"
 echo "$L" | grep -q '"occ":4' || fail "nombre de dates de l'invitation répétée incorrect ($L)"
 echo "Invitation répétée vérifiée : 4 jeudis"
+
+adb logcat -d | tr -d '\r' | grep -q "FATAL EXCEPTION" && fail "l'application s'est arrêtée brutalement"
+
+# Pose le doigt simulé jusqu'à ce que le motif apparaisse dans le journal de test (60 s maximum)
+touch_until() {
+  local pat="$1" out=""
+  for i in $(seq 1 24); do
+    out=$(adb logcat -d -s "$TAG" | tr -d '\r' | grep -E "$pat" | tail -n1)
+    [ -n "$out" ] && { echo "$out"; return 0; }
+    if adb logcat -d -s "$TAG" | grep -q "BIO_PROMPT"; then
+      adb emu finger touch 1 >/dev/null 2>&1; sleep 0.5; adb emu finger remove 1 >/dev/null 2>&1
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+echo "== Empreinte digitale : enregistrement d'un doigt sur le téléphone virtuel"
+BIO_ENROLLED=0
+python3 ci/empreinte.py && BIO_ENROLLED=1
+echo "== Coffre : activation puis ouverture par empreinte"
+adb shell am force-stop $PKG
+adb logcat -c
+adb shell am start -W -n $PKG/.MainActivity --ez orbite_biotest true >/dev/null || fail "lancement du test d'empreinte"
+L=$(wait_for "JS BIO (STATUS|FAIL)") || fail "le test d'empreinte n'a pas démarré"
+echo "$L"
+if echo "$L" | grep -q '"level":0'; then
+  [ "$BIO_ENROLLED" = 1 ] && fail "empreinte enregistrée sur le téléphone mais pas reconnue par Orbite ($L)"
+  echo "::warning::Empreinte non testée : le téléphone virtuel n'a pas pu enregistrer de doigt"
+else
+  L=$(touch_until "JS BIO (ENABLED|FAIL)") || fail "activation de l'empreinte sans réponse"
+  echo "$L"
+  echo "$L" | grep -q "JS BIO ENABLED" || fail "activation de l'empreinte ($L)"
+  echo "$L" | grep -q '"rawStored":false' || fail "clé du coffre enregistrée en clair ($L)"
+  L=$(touch_until "JS BIO (UNLOCKED|FAIL)") || fail "ouverture par empreinte sans réponse"
+  echo "$L"
+  echo "$L" | grep -q '"open":true,"secret":true' || fail "ouverture du coffre par empreinte ($L)"
+  wait_for "JS BIO READY" >/dev/null || fail "test d'absence non prêt"
+  echo "== Coffre : courte absence (autre application), il reste ouvert"
+  adb shell input keyevent KEYCODE_HOME; sleep 5
+  adb shell am start -n $PKG/.MainActivity >/dev/null
+  L=$(wait_for "JS BIO SHORT") || fail "retour dans Orbite après une courte absence"
+  echo "$L"
+  echo "$L" | grep -q '"open":true' || fail "coffre fermé après une absence de 5 s ($L)"
+  echo "== Coffre : absence plus longue que le délai choisi, il se ferme"
+  adb shell input keyevent KEYCODE_HOME; sleep 16
+  adb shell am start -n $PKG/.MainActivity >/dev/null
+  L=$(wait_for "JS BIO LONG") || fail "retour dans Orbite après une longue absence"
+  echo "$L"
+  echo "$L" | grep -q '"open":false' || fail "coffre resté ouvert après le délai ($L)"
+  echo "Empreinte vérifiée sur le téléphone : activation, ouverture, clé protégée par le téléphone, délai de verrouillage"
+fi
+adb logcat -d -s "$TAG" | tr -d '\r' | grep -E "BIO_" | tail -n 12
 
 echo "== Erreurs éventuelles de l'interface"
 adb logcat -d -s ORBITE_JS | tr -d '\r' | grep -iE "error|uncaught" | tail -n 20

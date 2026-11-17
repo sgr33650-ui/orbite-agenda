@@ -1,6 +1,6 @@
 # Orbite — agenda Android
 
-Agenda futuriste : vues jour, semaine, mois et année, coffre sécurisé par empreinte digitale, documents et photos dans les événements, partage rapide, thèmes, couleurs, polices et sons personnalisables, import de l'ancien agenda (.ics).
+Agenda futuriste : vues jour, semaine, mois et année, coffre sécurisé par empreinte digitale (événements privés, clés de récupération et mots de passe), documents et photos dans les événements, partage rapide, thèmes, couleurs, polices et sons personnalisables, import de l'ancien agenda (.ics).
 
 ## Installer sur le téléphone
 
@@ -22,12 +22,23 @@ Dans Orbite, touchez **Importer mon ancien agenda** (ou Paramètres › Importer
 
 Dans l’éditeur, le champ **Répétition** propose : tous les jours, du lundi au vendredi, toutes les semaines (jours au choix), tous les mois (le 17, le 3e mardi ou le dernier vendredi), tous les ans, avec un intervalle (toutes les 2 semaines…) et une fin (jamais, à une date, après X fois). Pour modifier ou supprimer une date d’une série : « Cette date seulement », « Cette date et les suivantes » ou « Toutes les dates de la série ». Les invitations répétées reçues par mail (.ics) sont reprises avec toutes leurs dates.
 
+## Coffre sécurisé
+
+Touchez le cadenas en haut de l’écran. À la création, choisissez un code de 4 à 8 chiffres : l’empreinte est proposée tout de suite, et le coffre s’ouvre ensuite en posant le doigt (le code reste valable).
+
+- **Événements privés** : créez-les dans le coffre, ou cochez « Ranger dans le coffre » dans un événement ; si le coffre est fermé, il s’ouvre sur place sans perdre la saisie.
+- **Clés et mots de passe** : clés de récupération des applications (codes de secours, plusieurs lignes) et mots de passe, avec Afficher, Copier (effacé du presse-papiers après 1 minute), Générer, Rechercher, Modifier, Supprimer.
+- **Verrouillage** : après le délai choisi sans utilisation (1, 2, 5 ou 15 min), même si vous êtes passé sur une autre application. S’il se ferme pendant une saisie, celle-ci est conservée : déverrouillez et continuez.
+- Tout est chiffré sur le téléphone (AES-256). La clé du coffre est protégée par votre code et, pour l’empreinte, par le matériel sécurisé du téléphone (Android Keystore). Si les empreintes du téléphone changent, ouvrez avec votre code : l’empreinte vous sera reproposée.
+
 ## Fonctionnement
 
 Chaque envoi sur la branche `main` fabrique automatiquement un nouvel APK, l’installe et le teste sur un téléphone Android virtuel (onglet **Actions**), puis le publie dans **Releases** seulement si le test réussit.
 
 - `app/src/main/assets/www/index.html` : l'interface de l'agenda
-- `app/src/main/java/com/orbite/agenda/MainActivity.java` : la partie Android (empreinte, partage, notifications, fichiers)
+- `app/src/main/java/com/orbite/agenda/MainActivity.java` : la partie Android (partage, notifications, fichiers, presse-papiers)
+- `app/src/main/java/com/orbite/agenda/VaultBio.java` : ouverture du coffre par empreinte (Android Keystore)
 - `app/src/main/java/com/orbite/agenda/PhoneCalendar.java` : lecture de l’agenda du téléphone pour l’import
-- `ci/test-telephone.sh` : test automatique sur téléphone virtuel
+- `ci/test-telephone.sh` : test automatique sur téléphone virtuel (agenda, invitations, répétitions, coffre, empreinte)
+- `ci/empreinte.py` : enregistre un doigt simulé sur le téléphone virtuel pour tester l’empreinte
 - `keystore/orbite.jks` : clé de signature, toujours la même pour que les mises à jour s'installent par-dessus

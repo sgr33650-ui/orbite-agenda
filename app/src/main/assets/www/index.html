@@ -134,6 +134,26 @@ svg{display:block}
 .choice h2{margin:0 0 6px;font:600 calc(18px * var(--fs))/1.3 var(--f-body);text-wrap:balance}
 .choice-list{display:flex;flex-direction:column;gap:8px;margin:14px 0 6px}
 .choice-list .btn{width:100%;justify-content:flex-start;white-space:normal;text-align:left}
+.gate{position:fixed;inset:0;z-index:65;display:grid;place-items:center;overflow-y:auto;padding-block:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:color-mix(in srgb,var(--bg) 84%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.gate.cover{background:var(--bg)}
+.gate-box{width:min(400px,100%);background:var(--bg2);border:1px solid var(--line2);border-radius:24px;box-shadow:var(--shadow);padding:22px;animation:rise .24s cubic-bezier(.2,.8,.2,1)}
+.gate-box h2{margin:0 0 6px;text-align:center;font:600 calc(19px * var(--fs))/1.25 var(--f-body);text-wrap:balance}
+.gate-box>.hint{text-align:center;margin:0 0 16px}
+.gate-box .vault-hero{margin-top:0}
+.kc-list{display:flex;flex-direction:column;gap:10px}
+.kc{display:flex;flex-direction:column;gap:9px;padding:12px 14px;border-radius:14px;background:var(--panel);border:1px solid var(--line);min-width:0}
+.kc-top{display:flex;gap:12px;align-items:center;min-width:0}
+.kc-ic{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;flex:none;color:var(--ink);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.kc-ic svg{width:18px;height:18px}
+.kc-t{display:flex;flex-direction:column;min-width:0}
+.kc-t b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kc-t small{color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kc-sec{font-size:13.5px;line-height:1.5;padding:8px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--fg);letter-spacing:.04em;min-width:0}
+.kc-url{color:var(--mut);font-size:12px;overflow-wrap:anywhere}
+.kc .kc-notes{text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}
+.kc-act .btn{min-height:36px;padding:6px 12px;font-size:12.5px}
+.kc-act .btn svg{width:15px;height:15px}
+.kpw{display:flex;gap:6px;align-items:center}.kpw .inp{min-width:0;flex:1}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .sp{flex:1}
 .form{display:flex;flex-direction:column;gap:16px}
@@ -412,6 +432,25 @@ button.fp:hover{background:radial-gradient(circle,color-mix(in srgb,var(--accent
 <div class="overlay" id="choiceWrap" hidden style="z-index:60"><div class="backdrop" data-cancel></div>
   <section class="sheet choice" role="alertdialog" aria-labelledby="chTitle" style="width:min(420px,100%)"><h2 id="chTitle"></h2><p class="hint" id="chMsg"></p><div class="choice-list" id="chList"></div>
   <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-cancel>Annuler</button></div></section></div>
+<div class="gate" id="gateWrap" hidden>
+  <section class="gate-box" role="dialog" aria-modal="true" aria-labelledby="gTitle">
+    <div class="vault-hero"><button class="fp" id="g-bio" type="button" aria-label="Ouvrir avec l’empreinte digitale" data-icon="fp" hidden></button><div class="fp" id="g-shield" data-icon="shield"></div><div class="fp-cap" id="g-bio-cap" hidden>Touchez pour utiliser votre empreinte</div></div>
+    <h2 id="gTitle">Coffre</h2>
+    <p class="hint" id="gMsg"></p>
+    <form class="form" id="gForm" novalidate>
+      <label class="fld"><span id="g-p1l">Code secret</span><input class="inp pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" id="g-p1" autocomplete="off"></label>
+      <label class="fld" id="g-p2w" hidden><span>Confirmer le code</span><input class="inp pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" id="g-p2" autocomplete="off"></label>
+      <p class="err" id="g-err" hidden></p>
+      <button class="btn pri" type="submit" id="g-go">Déverrouiller</button>
+      <button class="btn ghost" type="button" id="g-cancel">Annuler</button>
+    </form>
+    <div class="form" id="g-ask" hidden>
+      <p class="err" id="g-ask-err" hidden></p>
+      <button class="btn pri" type="button" id="g-ask-yes" data-icon="fp">Activer l’empreinte</button>
+      <button class="btn ghost" type="button" id="g-ask-no">Plus tard</button>
+    </div>
+  </section>
+</div>
 <div id="lightbox" hidden></div>
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -466,6 +505,9 @@ const I={
   vWeek:sv('<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M9.2 4.5v15M14.8 4.5v15"/>'),
   vMonth:sv('<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M3.5 9.5h17M3.5 14.5h17M9.2 9.5v10M14.8 9.5v10"/>'),
   vYear:sv('<rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6"/>'),
+  key:sv('<circle cx="7.5" cy="15.5" r="4"/><path d="M10.5 12.5L20 3M16.5 6.5l3 3M14 9l2 2"/>'),
+  eye:sv('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+  eyeOff:sv('<path d="M3 3l18 18"/><path d="M10.6 5.6A10 10 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3 3.8M6.6 6.6C3.9 8.4 2.5 12 2.5 12S6 18.5 12 18.5c1.6 0 3-.4 4.2-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'),
   repeat:sv('<path d="M17 2.5l3 3-3 3"/><path d="M4 11.5v-1a5 5 0 0 1 5-5h11"/><path d="M7 21.5l-3-3 3-3"/><path d="M20 12.5v1a5 5 0 0 1-5 5H4"/>'),
   shield:sv('<path d="M12 3l7.5 3v5.5c0 4.5-3.2 8.2-7.5 9.5-4.3-1.3-7.5-5-7.5-9.5V6z"/><path d="M9 12l2.2 2.2L15.5 10"/>')
 };
@@ -937,8 +979,8 @@ $('#view').addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.t
 
 /* raccourcis clavier (ordinateur) */
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){if(!$('#choiceWrap').hidden)$('#choiceWrap .btn[data-cancel]').click();else if(!$('#confirmWrap').hidden)$('#confirmWrap .btn[data-cancel]').click();else if(!$('#lightbox').hidden)closeLightbox();else if(!$('#sheetWrap').hidden)closeSheet();return}
-  if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select')||!$('#sheetWrap').hidden||!$('#confirmWrap').hidden||!$('#choiceWrap').hidden)return;
+  if(e.key==='Escape'){if(!$('#gateWrap').hidden)gateBack();else if(!$('#choiceWrap').hidden)$('#choiceWrap .btn[data-cancel]').click();else if(!$('#confirmWrap').hidden)$('#confirmWrap .btn[data-cancel]').click();else if(!$('#lightbox').hidden)closeLightbox();else if(!$('#sheetWrap').hidden)closeSheet();return}
+  if(e.ctrlKey||e.metaKey||e.altKey||e.target.closest('input,textarea,select')||!$('#sheetWrap').hidden||!$('#confirmWrap').hidden||!$('#choiceWrap').hidden||!$('#gateWrap').hidden)return;
   const k=e.key.toLowerCase();
   if(k==='arrowleft')nav(-1);else if(k==='arrowright')nav(1);
   else if(k==='t'){S.cur=new Date();S.lastKey='';render()}
@@ -1120,12 +1162,12 @@ function openEditor(id,preset={}){
     f('et').onchange=()=>{const d=new Date(`${f('sd').value}T${f('st').value}`)-new Date(`${f('ed').value}T${f('et').value}`);if(!isNaN(d))dur=d};
     f('colors').onclick=e=>{const b=e.target.closest('[data-val]');if(!b)return;draft.color=b.dataset.val;f('colors').querySelectorAll('.swatch').forEach(x=>x.setAttribute('aria-pressed',String(x===b)))};
     f('file').onchange=async()=>{await addFiles([...f('file').files]);f('file').value=''};
-    f('secure').onchange=()=>{if(f('secure').checked&&!S.vaultKey){f('secure').checked=false;toast(S.vault?'Ouvrez d’abord le coffre (icône cadenas en haut).':'Créez d’abord votre coffre (icône cadenas en haut).',3800)}};
+    f('secure').onchange=async()=>{if(f('secure').checked&&(!S.vaultKey||S.soft)){const ok=await vaultGate({reason:'Pour ranger cet événement dans le coffre, ouvrez-le.'});if(!ok)f('secure').checked=false}};
     if(f('del'))f('del').onclick=()=>deleteEvent(draft.id);
     if(!followed)mountRep(f,sd);
     sh.querySelector('#evForm').onsubmit=e=>{e.preventDefault();saveDraft()};
     drawAtts();
-    if(isNew&&matchMedia('(pointer:fine)').matches)setTimeout(()=>f('title').focus(),60);
+    if(isNew&&matchMedia('(pointer:fine)').matches)setTimeout(()=>{const el=f('title');if(el&&(document.activeElement===sh||!sh.contains(document.activeElement)))el.focus()},60);
   });
 }
 function readFile(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(r.error);r.readAsDataURL(f)})}
@@ -1170,6 +1212,7 @@ async function saveDraft(){
   }
   const fields={title,allDay,start,end,location:f('loc').value.trim(),notes:f('notes').value,reminder:+f('rem').value,color:draft.color,attachments:draft.attachments||[]};
   const toSecure=f('secure').checked,baseId=draft.baseId||draft.id;
+  if((toSecure||draft.secure)&&(!S.vaultKey||S.soft)&&!(await vaultGate({reason:'Pour enregistrer cet événement du coffre, ouvrez-le.'}))){toast('Non enregistré : le coffre est fermé',4000);return}
   const base=S.events.find(x=>x.id===baseId)||S.secure.find(x=>x.id===baseId)||null;
   const wasSecure=!!(base&&S.secure.includes(base));
   let msg=toSecure?'Enregistré dans le coffre':'Événement enregistré',go=start;
@@ -1257,7 +1300,7 @@ async function clearSamples(){
 /* ---------- détail ---------- */
 function openDetail(id){
   const e=findEv(id);
-  if(!e){if(S.vault&&S.vault.meta&&S.vault.meta.some(m=>m.id===baseIdOf(id)))openVault();return}
+  if(!e){if(!S.vaultKey&&S.vault&&S.vault.meta&&S.vault.meta.some(m=>m.id===baseIdOf(id)))vaultGate().then(ok=>{if(ok&&findEv(id))openDetail(id)});return}
   const secure=S.secure.some(x=>x.id===baseIdOf(id)),rem=REMIND.find(r=>r[0]===(e.reminder||0));
   openSheet(`<div class="d-head" style="--c:${safeColor(e.color)}"><span class="d-dot"></span><h2>${esc(e.title)}</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></div>
     <div class="tags">${secure?`<span class="pill ok">Coffre · chiffré</span>`:''}${e.sample?'<span class="pill">Exemple</span>':''}</div>
@@ -1268,7 +1311,7 @@ function openDetail(id){
     ${e.notes?`<p class="notes">${esc(e.notes)}</p>`:''}
     ${(e.attachments||[]).length?`<div class="fld" style="margin-bottom:16px"><span>Documents & images · ${e.attachments.length}</span><div class="atts" id="d-atts">${e.attachments.map(a=>attTile(a,false)).join('')}</div></div>`:''}
     <footer class="sh-f"><button class="btn pri" id="d-share">${I.share}Partager</button><button class="btn ghost" id="d-edit">${I.edit}Modifier</button><span class="sp"></span><button class="btn danger" id="d-del" aria-label="Supprimer">${I.trash}</button></footer>`,
-  secure?'secure':'detail',sh=>{
+  secure?'secdetail':'detail',sh=>{
     sh.querySelector('#d-share').onclick=()=>quickShare(id);
     sh.querySelector('#d-edit').onclick=()=>openEditor(id);
     sh.querySelector('#d-del').onclick=()=>deleteEvent(id);
@@ -1394,106 +1437,346 @@ async function importFile(file){
 }
 $('#gImport').onchange=async e=>{await importFile(e.target.files[0]);e.target.value=''};
 
-/* ---------- coffre sécurisé (AES-256-GCM, clé dérivée du code) ---------- */
+/* ---------- coffre sécurisé ----------
+   Événements privés, clés et mots de passe sont chiffrés (AES-256-GCM) par une clé maîtresse aléatoire.
+   La clé maîtresse est chiffrée par le code secret (PBKDF2, 200 000 tours) et, si l'empreinte est activée,
+   par une clé du Keystore Android qui ne fonctionne qu'après une empreinte reconnue. */
 const b64=u=>{let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)};
 const ub64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 const rand=n=>crypto.getRandomValues(new Uint8Array(n));
 async function deriveKey(pin,salt){const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:200000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},true,['encrypt','decrypt'])}
 async function encJSON(key,obj){const iv=rand(12);const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify(obj)));return{iv:b64(iv),ct:b64(new Uint8Array(ct))}}
 async function decJSON(key,box){const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:ub64(box.iv)},key,ub64(box.ct));return JSON.parse(new TextDecoder().decode(pt))}
-async function saveVault(){if(!S.vaultKey||!S.vault)return;S.vault.box=await encJSON(S.vaultKey,S.secure);S.vault.meta=S.secure.map(e=>({id:e.id,start:e.start,end:e.end,allDay:e.allDay,rec:e.rec||undefined}));await DB.set('vault',S.vault)}
+async function encBytes(key,bytes){const iv=rand(12);const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,bytes);return{iv:b64(iv),ct:b64(new Uint8Array(ct))}}
+async function decBytes(key,box){return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:ub64(box.iv)},key,ub64(box.ct)))}
+const newMaster=()=>crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+const importMaster=raw=>crypto.subtle.importKey('raw',raw,'AES-GCM',true,['encrypt','decrypt']);
+const rawOf=async k=>new Uint8Array(await crypto.subtle.exportKey('raw',k));
+S.keys=[];S.soft=false;S.vaultTab='events';
+async function saveVault(){if(!S.vaultKey||!S.vault)return;S.vault.box=await encJSON(S.vaultKey,{v:2,events:S.secure,keys:S.keys});S.vault.meta=S.secure.map(e=>({id:e.id,start:e.start,end:e.end,allDay:e.allDay,rec:e.rec||undefined}));await DB.set('vault',S.vault)}
 function updateVaultBtn(){const b=$('#vaultBtn');b.innerHTML=S.vaultKey?I.unlock:I.lock;b.classList.toggle('open',!!S.vaultKey);b.setAttribute('aria-label',S.vaultKey?'Coffre ouvert':'Coffre sécurisé')}
+function openWithData(key,data){
+  S.vaultKey=key;
+  S.secure=Array.isArray(data)?data:(data&&Array.isArray(data.events)?data.events:[]);
+  S.keys=data&&!Array.isArray(data)&&Array.isArray(data.keys)?data.keys:[];
+  S.soft=false;lastAct=Date.now();updateVaultBtn();render();
+}
+async function createVault(pin){
+  const salt=rand(16),pk=await deriveKey(pin,salt),mk=await newMaster();
+  S.vault={v:2,salt:b64(salt),wrap:await encBytes(pk,await rawOf(mk)),box:null,meta:[],bio:null};
+  openWithData(mk,{events:[],keys:[]});await saveVault();
+}
+/* Ouvre avec le code ; une erreur est levée si le code est faux. Un ancien coffre passe à la clé maîtresse. */
+async function unlockWithPin(pin){
+  const pk=await deriveKey(pin,ub64(S.vault.salt));
+  if(S.vault.v===2){const mk=await importMaster(await decBytes(pk,S.vault.wrap));openWithData(mk,S.vault.box?await decJSON(mk,S.vault.box):{events:[],keys:[]});return}
+  const data=S.vault.box?await decJSON(pk,S.vault.box):[];
+  const mk=await newMaster();
+  S.vault.v=2;S.vault.wrap=await encBytes(pk,await rawOf(mk));
+  if(S.vault.bio&&!S.vault.bio.mode)S.vault.bio=null;
+  openWithData(mk,data);await saveVault();
+}
+async function changePin(pin){const salt=rand(16),pk=await deriveKey(pin,salt);S.vault.v=2;S.vault.salt=b64(salt);S.vault.wrap=await encBytes(pk,await rawOf(S.vaultKey));await saveVault()}
 let failCount=0,blockUntil=0;
-function openVault(){if(!window.crypto||!crypto.subtle){toast('Chiffrement indisponible sur ce navigateur');return}if(!S.vault)vaultSetup();else if(!S.vaultKey)vaultUnlock();else vaultList()}
 const pinField=(id,label,ac)=>`<label class="fld"><span>${label}</span><input class="inp pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" id="${id}" autocomplete="${ac}"></label>`;
-function vaultSetup(){
-  openSheet(`<header class="sh-h"><h2>Créer votre coffre sécurisé</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
-  <div class="vault-hero"><div class="fp">${I.shield}</div></div>
-  <p class="hint" style="margin-bottom:16px">Les événements rangés ici sont chiffrés en AES-256 sur l’appareil. Dans l’agenda, ils apparaissent seulement comme « Privé » tant que le coffre est fermé.</p>
-  <form class="form" id="v-form">${pinField('v-p1','Code secret · 4 à 8 chiffres','new-password')}${pinField('v-p2','Confirmer le code','new-password')}
-  <p class="err" id="v-err" hidden></p><button class="btn pri" type="submit">${I.lock}Créer le coffre</button>
-  <p class="hint">Vous pourrez ensuite activer l’ouverture par empreinte digitale.</p></form>`,'vault',sh=>{
-    sh.querySelector('#v-form').onsubmit=async e=>{e.preventDefault();const p1=sh.querySelector('#v-p1').value,p2=sh.querySelector('#v-p2').value,er=sh.querySelector('#v-err');
-      if(!/^\d{4,8}$/.test(p1)){er.textContent='Le code doit contenir 4 à 8 chiffres.';er.hidden=false;return}
-      if(p1!==p2){er.textContent='Les deux codes ne correspondent pas.';er.hidden=false;return}
-      const salt=rand(16);S.vaultKey=await deriveKey(p1,salt);S.vault={salt:b64(salt),box:null,meta:[],bio:null};S.secure=[];await saveVault();
-      updateVaultBtn();play(S.settings.sound);toast('Coffre créé et ouvert');vaultList()};
-  });
+
+/* ---- empreinte digitale ---- */
+let webBio=0;   // ordinateur : Windows Hello ou capteur intégré, s'il y en a un
+try{if(!NATIVE&&window.PublicKeyCredential&&PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable)PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v=>{webBio=v?1:0}).catch(()=>{})}catch(e){}
+function bioStatus(){
+  if(!NATIVE)return{level:webBio,reason:webBio?'ok':'web'};
+  try{return JSON.parse(OrbiteNative.bioStatus())}catch(e){return{level:0,reason:'unavailable'}}
 }
-function vaultUnlock(msg){
-  const bio=!!(S.vault&&S.vault.bio);
-  openSheet(`<header class="sh-h"><h2>Coffre verrouillé</h2><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
-  <div class="vault-hero"><button class="fp" id="v-bio" aria-label="Ouvrir avec l’empreinte digitale">${I.fp}</button><div class="fp-cap">${bio?'Touchez pour utiliser votre empreinte':'Empreinte non activée · utilisez votre code'}</div></div>
-  <form class="form" id="v-form">${pinField('v-pin','Code secret','current-password')}<p class="err" id="v-err" ${msg?'':'hidden'}>${esc(msg||'')}</p><button class="btn pri" type="submit">${I.unlock}Déverrouiller</button></form>`,'vault',sh=>{
-    const er=sh.querySelector('#v-err'),form=sh.querySelector('#v-form');
-    const fail=t=>{er.textContent=t;er.hidden=false;form.classList.remove('shake');void form.offsetWidth;form.classList.add('shake')};
-    sh.querySelector('#v-bio').onclick=async()=>{if(!bio){fail('Ouvrez une première fois avec votre code, puis activez l’empreinte dans le coffre.');return}try{await bioUnlock();afterUnlock()}catch(e){fail(bioMsg(e))}};
-    form.onsubmit=async e=>{e.preventDefault();
-      if(Date.now()<blockUntil){fail(`Trop d’essais. Réessayez dans ${Math.ceil((blockUntil-Date.now())/1000)} s.`);return}
-      const pin=sh.querySelector('#v-pin').value;
-      try{const key=await deriveKey(pin,ub64(S.vault.salt));S.secure=await decJSON(key,S.vault.box);S.vaultKey=key;failCount=0;afterUnlock()}
-      catch(err){failCount++;if(failCount>=5){blockUntil=Date.now()+30000;failCount=0}fail('Code incorrect.');sh.querySelector('#v-pin').value=''}};
-  });
+const bioOn=()=>!!(S.vault&&S.vault.bio&&(S.vault.bio.mode||S.vault.bio.credId));
+/* chaque demande d'empreinte porte un numéro : une réponse tardive d'une ancienne invite est ignorée */
+let bioPending=null,bioSeq=0;
+window.__bioReply=(id,ok,payload)=>{const p=bioPending;if(!p||p.id!==id)return;bioPending=null;let d={};try{d=JSON.parse(payload)}catch(e){}
+  if(ok)p.res(d);else{const e=new Error(d.msg||d.error||'empreinte');e.code=d.error||'other';p.rej(e)}};
+function bioCall(fn){return new Promise((res,rej)=>{
+  if(bioPending){const e=new Error('annulé');e.code='cancel';bioPending.rej(e)}
+  const id=++bioSeq;bioPending={id,res,rej};
+  try{fn(id)}catch(x){if(bioPending&&bioPending.id===id)bioPending=null;x.code=x.code||'other';rej(x)}
+})}
+async function bioRegister(){
+  if(!S.vaultKey){const e=new Error('coffre fermé');e.code='closed';throw e}
+  const raw=b64(await rawOf(S.vaultKey));   // lue avant l'invite : le coffre reste utilisable même s'il se verrouille pendant
+  if(NATIVE){const d=await bioCall(id=>OrbiteNative.bioEnable(raw,id));S.vault.bio={mode:d.mode,iv:d.iv,ct:d.ct};await DB.set('vault',S.vault);return}
+  if(!window.PublicKeyCredential||!navigator.credentials){const e=new Error('web');e.code='none';throw e}
+  const cred=await navigator.credentials.create({publicKey:{challenge:rand(32),rp:{name:'Orbite'},user:{id:rand(16),name:'orbite-coffre',displayName:'Coffre Orbite'},
+    pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'discouraged'},timeout:60000}});
+  S.vault.bio={credId:b64(new Uint8Array(cred.rawId)),rawKey:raw};await DB.set('vault',S.vault);
 }
-function afterUnlock(){updateVaultBtn();lastAct=Date.now();play(S.settings.sound);toast('Coffre ouvert');render();vaultList()}
+async function bioKey(){
+  const b=S.vault.bio;
+  if(b.mode){const d=await bioCall(id=>OrbiteNative.bioOpen(b.mode,b.iv,b.ct,id));return importMaster(ub64(d.raw))}
+  await navigator.credentials.get({publicKey:{challenge:rand(32),allowCredentials:[{type:'public-key',id:ub64(b.credId)}],userVerification:'required',timeout:60000}});
+  return importMaster(ub64(b.rawKey));
+}
+async function unlockWithBio(){const k=await bioKey();openWithData(k,await decJSON(k,S.vault.box))}
+async function bioDisable(){if(S.vault){S.vault.bio=null;await DB.set('vault',S.vault)}try{if(NATIVE)OrbiteNative.bioDisable()}catch(e){}}
+function bioMsg(e){
+  const c=e&&e.code;
+  if(c==='cancel'||c==='background')return '';
+  if(c==='closed')return 'Le coffre s’est refermé : ouvrez-le, puis activez l’empreinte dans Sécurité.';
+  if(c==='lockout')return 'Trop d’essais avec l’empreinte : utilisez votre code. L’empreinte refonctionnera dans quelques instants.';
+  if(c==='none')return 'Aucune empreinte n’est enregistrée sur ce téléphone. Ajoutez-en une dans les réglages du téléphone (Mots de passe et sécurité › Empreinte digitale), puis réessayez.';
+  if(c==='invalidated'||c==='missing')return 'Les empreintes du téléphone ont changé : par sécurité, ouvrez avec votre code, puis réactivez l’empreinte.';
+  if(c==='crypto')return 'L’empreinte doit être réactivée : ouvrez avec votre code, elle vous sera proposée.';
+  if(c==='timeout')return 'Temps écoulé : touchez l’icône d’empreinte pour réessayer.';
+  if(e&&e.name==='NotAllowedError')return 'Empreinte refusée ou annulée. Utilisez votre code.';
+  return 'L’empreinte n’a pas fonctionné'+(e&&e.message&&e.message!=='empreinte'?` (${e.message})`:'')+'. Utilisez votre code.';
+}
+function bioStatusText(){
+  const st=bioStatus();
+  if(bioOn())return 'Activée : le coffre s’ouvre en posant votre doigt';
+  if(st.level>0)return 'Désactivée';
+  if(st.reason==='none_enrolled')return 'Aucune empreinte enregistrée sur le téléphone : ajoutez-en une dans ses réglages (Mots de passe et sécurité › Empreinte digitale).';
+  if(st.reason==='no_hardware')return 'Ce téléphone n’a pas de capteur d’empreinte compatible.';
+  return NATIVE?'Empreinte indisponible pour le moment.':'Utilise Windows Hello ou le capteur de l’appareil, s’il y en a un.';
+}
+
+/* ---- verrouillage : après le délai choisi sans utilisation, même en arrière-plan ;
+   une absence courte (joindre un fichier, copier un code) ne ferme pas le coffre ;
+   pendant une saisie, le coffre se verrouille sans perdre ce qui est écrit ---- */
+let lastAct=Date.now();
+['pointerdown','keydown','input','wheel','touchstart','scroll'].forEach(t=>addEventListener(t,()=>{lastAct=Date.now()},{passive:true,capture:true}));
+const isVaultEditing=()=>S.sheetKind==='secure'||S.sheetKind==='key'||(S.sheetKind==='editor'&&!!($('#f-secure')&&$('#f-secure').checked));
+function checkAutoLock(){if(S.vaultKey&&!S.soft&&Date.now()-lastAct>S.settings.autoLock*60000)lockVault(true)}
+setInterval(checkAutoLock,5000);
+let pendingAutoBio=null;   // l'empreinte ne se lance que quand Orbite est à l'écran
+document.addEventListener('visibilitychange',()=>{if(document.hidden){maskSecrets();return}checkAutoLock();if(pendingAutoBio){const f=pendingAutoBio;pendingAutoBio=null;setTimeout(f,400)}});
+const vaultSheetOpen=()=>['vault','secure','secdetail','key'].includes(S.sheetKind)||isVaultEditing();
 function lockVault(auto){
-  if(!S.vaultKey)return;S.vaultKey=null;S.secure=[];updateVaultBtn();
-  if(['vault','secure'].includes(S.sheetKind))closeSheet();render();toast(auto?'Coffre verrouillé automatiquement':'Coffre verrouillé');
+  if(!S.vaultKey)return;
+  if(auto&&isVaultEditing()){if(!S.soft)softLock();return}
+  if(vaultSheetOpen()&&!$('#lightbox').hidden)closeLightbox();
+  S.vaultKey=null;S.secure=[];S.keys=[];S.soft=false;updateVaultBtn();
+  if(['vault','secure','secdetail','key'].includes(S.sheetKind))closeSheet();
+  if(gateRes)gateDone(false);
+  render();toast(auto?'Coffre verrouillé automatiquement':'Coffre verrouillé');
 }
-function vaultList(){
-  const list=S.secure.slice().sort(sortEv);
+async function softLock(){
+  S.soft=true;maskSecrets();
+  if(!$('#lightbox').hidden)closeLightbox();
+  const ok=await vaultGate({soft:true});
+  if(!ok&&S.soft){S.soft=false;closeSheet();lockVault(false)}
+}
+
+/* ---- fenêtre du coffre : création, ouverture, verrou pendant une saisie ---- */
+let gateRes=null,gateMode=null,gateAsk=false,gateBioBusy=false,gateWaiters=[];
+function gateDone(v){$('#gateWrap').hidden=true;const r=gateRes,ws=gateWaiters;gateRes=null;gateMode=null;gateAsk=false;gateWaiters=[];pendingAutoBio=null;if(r)r(v);ws.forEach(f=>f(v))}
+function vaultGate(opts={}){
+  if(!window.crypto||!crypto.subtle){toast('Chiffrement indisponible sur cet appareil');return Promise.resolve(false)}
+  if(S.vault&&S.vaultKey&&!S.soft&&!opts.soft)return Promise.resolve(true);
+  if(gateRes&&gateMode==='soft')return new Promise(r=>gateWaiters.push(r));   // déjà affichée : même réponse
+  if(gateRes)gateDone(gateAsk&&!!S.vaultKey);   // une question « empreinte ? » restée ouverte : le coffre avait bien été ouvert
+  return new Promise(res=>{
+    gateRes=res;gateMode=!S.vault?'create':opts.soft?'soft':'open';
+    const w=$('#gateWrap'),create=gateMode==='create',soft=gateMode==='soft';
+    w.classList.toggle('cover',soft);
+    $('#gTitle').textContent=create?'Créer votre coffre':soft?'Coffre verrouillé':'Ouvrir le coffre';
+    $('#gMsg').textContent=create?'Choisissez un code de 4 à 8 chiffres. Ce que vous rangez dans le coffre (événements, clés, mots de passe) est chiffré sur ce téléphone.':soft?'Votre saisie est conservée : déverrouillez pour continuer.':(opts.reason||'Déverrouillez le coffre pour continuer.');
+    $('#g-p1l').textContent=create?'Code secret · 4 à 8 chiffres':'Code secret';
+    $('#g-p2w').hidden=!create;$('#g-p1').value='';$('#g-p2').value='';
+    $('#g-err').hidden=true;$('#gForm').hidden=false;$('#g-ask').hidden=true;$('#g-ask-err').hidden=true;
+    $('#g-go').textContent=create?'Créer le coffre':'Déverrouiller';$('#g-go').disabled=false;
+    $('#g-cancel').textContent=soft?'Fermer le coffre sans enregistrer':'Annuler';
+    const showBio=!create&&bioOn();
+    $('#g-bio').hidden=!showBio;$('#g-bio-cap').hidden=!showBio;$('#g-shield').hidden=showBio;
+    w.hidden=false;
+    if(showBio)gateAutoBio();
+    else if(matchMedia('(pointer:fine)').matches)$('#g-p1').focus();
+  });
+}
+function gateAutoBio(){
+  const go=()=>{if(gateRes&&!$('#gateWrap').hidden&&gateMode!=='create'&&!gateAsk&&bioOn())gateBio()};
+  if(document.hidden)pendingAutoBio=go;else setTimeout(go,400);
+}
+function gateFail(t){const er=$('#g-err');if(!t){er.hidden=true;return}er.textContent=t;er.hidden=false;const f=$('#gForm');f.classList.remove('shake');void f.offsetWidth;f.classList.add('shake')}
+function gateSucceeded(viaPin){
+  S.soft=false;failCount=0;lastAct=Date.now();
+  // l'empreinte est proposée juste après la création du coffre, puis une fois après une ouverture par code
+  if(viaPin&&!bioOn()&&bioStatus().level>0&&(gateMode==='create'||!S.settings.bioAsked)){
+    gateAsk=true;$('#gForm').hidden=true;$('#g-bio').hidden=true;$('#g-bio-cap').hidden=true;$('#g-shield').hidden=false;$('#g-ask').hidden=false;$('#g-ask-err').hidden=true;
+    $('#gTitle').textContent='Ouvrir avec votre empreinte ?';
+    $('#gMsg').textContent='La prochaine fois, le coffre s’ouvrira en posant simplement votre doigt. Votre code reste valable.';
+    return;
+  }
+  play(S.settings.sound);gateDone(true);
+}
+async function gateBio(){
+  if(gateBioBusy)return;
+  gateBioBusy=true;gateFail('');
+  try{await unlockWithBio();toast('Coffre ouvert');gateSucceeded(false)}
+  catch(e){
+    if(e&&e.code==='background'){if(gateRes)pendingAutoBio=()=>{if(gateRes&&bioOn())gateBio()};return}
+    // clé d'empreinte perdue (empreintes du téléphone modifiées…) : on repasse au code, l'empreinte sera reproposée
+    const gone=e&&(e.code==='invalidated'||e.code==='missing'||e.code==='crypto');
+    if(gone){await bioDisable();S.settings.bioAsked=false;saveSettings();$('#g-bio').hidden=true;$('#g-bio-cap').hidden=true;$('#g-shield').hidden=false}
+    const m=bioMsg(e);if(m)gateFail(m);
+  }finally{gateBioBusy=false}
+}
+$('#gForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const p1=$('#g-p1').value,p2=$('#g-p2').value,go=$('#g-go');
+  if(gateMode==='create'){
+    if(!/^\d{4,8}$/.test(p1))return gateFail('Le code doit contenir 4 à 8 chiffres.');
+    if(p1!==p2)return gateFail('Les deux codes ne correspondent pas.');
+    go.disabled=true;
+    try{await createVault(p1);toast('Coffre créé et ouvert');gateSucceeded(true)}catch(x){gateFail('Création impossible : '+(x&&x.message||x))}finally{go.disabled=false}
+    return;
+  }
+  if(Date.now()<blockUntil)return gateFail(`Trop d’essais. Réessayez dans ${Math.ceil((blockUntil-Date.now())/1000)} s.`);
+  if(!p1)return gateFail('Saisissez votre code.');
+  go.disabled=true;
+  try{await unlockWithPin(p1);toast('Coffre ouvert');gateSucceeded(true)}
+  catch(x){failCount++;if(failCount>=5){blockUntil=Date.now()+30000;failCount=0}gateFail('Code incorrect.');$('#g-p1').value=''}
+  finally{go.disabled=false}
+});
+$('#g-bio').addEventListener('click',()=>gateBio());
+$('#g-cancel').addEventListener('click',()=>{
+  if(gateMode==='soft'){S.soft=false;gateDone(false);closeSheet();lockVault(false);return}   // « Fermer le coffre sans enregistrer »
+  gateDone(false);
+});
+$('#g-ask-yes').addEventListener('click',async()=>{
+  const b=$('#g-ask-yes');b.disabled=true;
+  try{await bioRegister();S.settings.bioAsked=true;saveSettings();toast('Empreinte activée');play(S.settings.sound);gateDone(true)}
+  catch(e){const er=$('#g-ask-err');er.textContent=bioMsg(e)||'Activation annulée. Vous pourrez l’activer plus tard dans le coffre (Sécurité).';er.hidden=false}
+  finally{b.disabled=false}
+});
+$('#g-ask-no').addEventListener('click',()=>{S.settings.bioAsked=true;saveSettings();gateDone(true)});
+/* retour Android / Échap : la question « empreinte ? » vaut « Plus tard » ; le verrou pendant une saisie reste en place */
+function gateBack(){if(gateAsk)$('#g-ask-no').click();else if(gateMode!=='soft')gateDone(false)}
+async function openVault(){if(await vaultGate())vaultList()}
+
+/* ---- clés de récupération et mots de passe ---- */
+const MASK='••••••••••••';
+const rndInt=n=>{const lim=Math.floor(0x100000000/n)*n,a=new Uint32Array(1);do crypto.getRandomValues(a);while(a[0]>=lim);return a[0]%n};
+function genPassword(n=20){
+  const sets=['ABCDEFGHJKLMNPQRSTUVWXYZ','abcdefghijkmnopqrstuvwxyz','23456789','!#$%&*+-=?@_'],all=sets.join('');
+  const p=sets.map(x=>x[rndInt(x.length)]);
+  while(p.length<n)p.push(all[rndInt(all.length)]);
+  for(let i=p.length-1;i>0;i--){const j=rndInt(i+1);[p[i],p[j]]=[p[j],p[i]]}
+  return p.join('');
+}
+function maskSecrets(){
+  document.querySelectorAll('.kc-sec.shown').forEach(el=>{el.textContent=MASK;el.classList.remove('shown')});
+  document.querySelectorAll('[data-show] span').forEach(sp=>{sp.textContent='Afficher'});
+  document.querySelectorAll('.kc-notes').forEach(n=>{n.textContent='';n.hidden=true});
+  const pw=$('#k-pw');if(pw&&pw.type==='text'){pw.type='password';const eye=$('#k-eye');if(eye)eye.innerHTML=I.eye}
+}
+function copySecret(text,msg){
+  if(NATIVE){try{OrbiteNative.copySecret(text);toast(msg+' · effacé du presse-papiers dans 1 min',4000);return}catch(e){}}
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(()=>toast(msg)).catch(()=>toast('Copie refusée : touchez « Afficher » puis sélectionnez le texte'));
+  else toast('Copie indisponible : touchez « Afficher » puis sélectionnez le texte');
+}
+function keyListHtml(q){
+  if(!S.keys.length)return '<div class="empty">Rangez ici les clés de récupération de vos applications (codes de secours, phrases de récupération) et vos mots de passe. Tout est chiffré sur ce téléphone.</div>';
+  const t=String(q||'').trim().toLowerCase();
+  const list=S.keys.filter(k=>!t||`${k.name} ${k.user||''} ${k.url||''}`.toLowerCase().includes(t)).sort((a,b)=>a.name.localeCompare(b.name,'fr',{sensitivity:'base'}));
+  if(!list.length)return '<div class="empty">Aucun résultat.</div>';
+  return list.map(k=>`<div class="kc" data-k="${esc(k.id)}">
+    <div class="kc-top"><span class="kc-ic">${k.type==='key'?I.key:I.lock}</span><div class="kc-t"><b>${esc(k.name)}</b><small>${k.type==='key'?'Clé de récupération':'Mot de passe'}${k.user?' · '+esc(k.user):''}</small></div></div>
+    <div class="kc-sec mono" data-sec="${esc(k.id)}">${MASK}</div>
+    ${k.url?`<small class="kc-url">${esc(k.url)}</small>`:''}${k.notes?'<p class="hint kc-notes" hidden></p>':''}
+    <div class="row kc-act"><button type="button" class="btn ghost" data-show="${esc(k.id)}">${I.eye}<span>Afficher</span></button><button type="button" class="btn ghost" data-copy="${esc(k.id)}">${I.copy}<span>Copier</span></button><button type="button" class="btn ghost" data-kedit="${esc(k.id)}">${I.edit}<span>Modifier</span></button></div>
+  </div>`).join('');
+}
+function keyAction(e){
+  const b=e.target.closest('[data-show],[data-copy],[data-kedit]');if(!b)return;
+  const id=b.dataset.show||b.dataset.copy||b.dataset.kedit,k=S.keys.find(x=>x.id===id);if(!k)return;
+  if(b.dataset.show){
+    const c=b.closest('.kc'),el=c.querySelector('.kc-sec'),shown=el.classList.toggle('shown'),nt=c.querySelector('.kc-notes');
+    el.textContent=shown?k.secret:MASK;b.querySelector('span').textContent=shown?'Masquer':'Afficher';
+    if(nt){nt.textContent=shown?'Notes : '+(k.notes||''):'';nt.hidden=!shown}
+  }else if(b.dataset.copy)copySecret(k.secret,k.type==='key'?'Clé copiée':'Mot de passe copié');
+  else openKeyEditor(id);
+}
+function openKeyEditor(id){
+  if(!S.vaultKey){openVault();return}
+  const k=id?S.keys.find(x=>x.id===id):null;
+  const d=k?{...k}:{id:uid(),type:'password',name:'',user:'',secret:'',url:'',notes:''};
+  openSheet(`<header class="sh-h"><h2>${k?'Modifier':'Nouvelle clé ou mot de passe'}</h2><button type="button" class="ib" id="k-x" aria-label="Revenir au coffre">${I.close}</button></header>
+  <form class="form" id="kForm" novalidate>
+    <div class="seg" id="k-type" role="group" aria-label="Type"><button type="button" data-val="password">Mot de passe</button><button type="button" data-val="key">Clé de récupération</button></div>
+    <label class="fld"><span>Application ou site</span><input class="inp" id="k-name" maxlength="80" placeholder="Ex. Gmail, Banque, Instagram" autocomplete="off"></label>
+    <label class="fld"><span>Identifiant ou e-mail (facultatif)</span><input class="inp" id="k-user" maxlength="160" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <div class="fld"><span id="k-sec-l">Mot de passe</span>
+      <div class="kpw" id="k-pw-w"><input class="inp mono" id="k-pw" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Mot de passe"><button type="button" class="ib" id="k-eye" aria-label="Afficher le mot de passe">${I.eye}</button></div>
+      <textarea class="inp mono" id="k-codes" rows="5" placeholder="Collez ici la clé ou les codes de récupération (un par ligne)" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Clé ou codes de récupération" hidden></textarea>
+      <div class="row" id="k-gen-w"><button type="button" class="btn ghost" id="k-gen">${I.key}Générer un mot de passe sûr</button></div>
+    </div>
+    <label class="fld"><span>Adresse du site (facultatif)</span><input class="inp" id="k-url" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://"></label>
+    <label class="fld"><span>Notes (facultatif)</span><textarea id="k-notes" rows="2" placeholder="Question secrète, date de création…"></textarea></label>
+    <footer class="sh-f">${k?`<button type="button" class="btn danger" id="k-del">${I.trash}Supprimer</button>`:''}<span class="sp"></span><button type="button" class="btn ghost" id="k-cancel">Annuler</button><button type="submit" class="btn pri">Enregistrer</button></footer>
+  </form>`,'key',sh=>{
+    const f=x=>sh.querySelector('#k-'+x);
+    f('name').value=d.name;f('user').value=d.user||'';f('url').value=d.url||'';f('notes').value=d.notes||'';
+    const setType=t=>{d.type=t;f('type').querySelectorAll('[data-val]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.val===t)));
+      const isKey=t==='key';f('sec-l').textContent=isKey?'Clé ou codes de récupération':'Mot de passe';
+      f('pw-w').hidden=isKey;f('gen-w').hidden=isKey;f('codes').hidden=!isKey;
+      if(isKey)f('codes').value=d.secret;else f('pw').value=d.secret};
+    f('pw').addEventListener('input',()=>{d.secret=f('pw').value});
+    f('codes').addEventListener('input',()=>{d.secret=f('codes').value});
+    setType(d.type);
+    f('type').onclick=e=>{const b=e.target.closest('[data-val]');if(b)setType(b.dataset.val)};
+    f('eye').onclick=()=>{const p=f('pw'),show=p.type==='password';p.type=show?'text':'password';f('eye').innerHTML=show?I.eyeOff:I.eye;f('eye').setAttribute('aria-label',show?'Masquer le mot de passe':'Afficher le mot de passe')};
+    f('gen').onclick=()=>{d.secret=genPassword(20);f('pw').value=d.secret;f('pw').type='text';f('eye').innerHTML=I.eyeOff;toast('Mot de passe généré : enregistrez-le aussi dans l’application concernée',4500)};
+    const back=()=>vaultList('keys');
+    f('cancel').onclick=back;f('x').onclick=back;
+    if(f('del'))f('del').onclick=async()=>{if(!await askConfirm(`Supprimer « ${d.name} » du coffre ? Cette action est définitive.`,'Supprimer'))return;S.keys=S.keys.filter(x=>x.id!==d.id);await saveVault();toast('Supprimé du coffre');back()};
+    sh.querySelector('#kForm').onsubmit=async e=>{
+      e.preventDefault();
+      const name=f('name').value.trim();if(!name){f('name').focus();toast('Indiquez l’application ou le site');return}
+      const secret=d.type==='key'?f('codes').value.trim():f('pw').value;
+      if(!secret.trim()){toast(d.type==='key'?'Collez la clé de récupération':'Saisissez le mot de passe');return}
+      if((!S.vaultKey||S.soft)&&!(await vaultGate()))return;
+      const now=Date.now(),item={id:d.id,type:d.type,name,user:f('user').value.trim(),secret,url:f('url').value.trim(),notes:f('notes').value.trim(),created:k&&k.created||now,updated:now};
+      const i=S.keys.findIndex(x=>x.id===item.id);if(i<0)S.keys.push(item);else S.keys[i]=item;
+      await saveVault();play(S.settings.sound);toast('Enregistré dans le coffre');back();
+    };
+    if(!k&&matchMedia('(pointer:fine)').matches)setTimeout(()=>{const el=f('name');if(el&&(document.activeElement===sh||!sh.contains(document.activeElement)))el.focus()},60);
+  });
+}
+
+/* ---- contenu du coffre ---- */
+function vaultList(tab){
+  if(!S.vaultKey){openVault();return}
+  if(tab)S.vaultTab=tab;
+  const keys=S.vaultTab==='keys',list=S.secure.slice().sort(sortEv),st=bioStatus();
   openSheet(`<header class="sh-h"><h2>Coffre ouvert</h2><span class="pill ok">Chiffré</span><button class="ib" data-close aria-label="Fermer">${I.close}</button></header>
-  <div class="row" style="margin-bottom:16px"><button class="btn pri" id="v-new">${I.plus}Nouvel événement privé</button><button class="btn ghost" id="v-lock">${I.lock}Verrouiller</button></div>
-  <div class="ag-list" id="v-list" style="margin-bottom:8px">${list.length?list.map(e=>card(e).replace(/<span class="t mono">/,`<span class="t mono">${range(e)[0].getDate()} ${esc(mShort(range(e)[0]))}<br>`)).join(''):'<div class="empty">Aucun élément privé pour l’instant. Créez un événement ici, ou activez « Ranger dans le coffre » sur un événement existant.</div>'}</div>
-  <section class="set-sec" style="margin-top:12px;border-top:1px solid var(--line);padding-top:18px">
+  <div class="seg" id="v-tabs" role="tablist" aria-label="Contenu du coffre"><button type="button" role="tab" data-val="events" aria-pressed="${!keys}" aria-selected="${!keys}">Événements privés</button><button type="button" role="tab" data-val="keys" aria-pressed="${keys}" aria-selected="${keys}">Clés et mots de passe</button></div>
+  ${keys?`<div class="row" style="margin:14px 0"><button class="btn pri" id="k-new">${I.plus}Ajouter une clé ou un mot de passe</button></div>
+    ${S.keys.length>4?'<input class="inp" id="k-search" type="search" placeholder="Rechercher une application ou un site" autocomplete="off" aria-label="Rechercher" style="margin-bottom:10px">':''}
+    <div class="kc-list" id="k-list">${keyListHtml('')}</div>`
+  :`<div class="row" style="margin:14px 0"><button class="btn pri" id="v-new">${I.plus}Nouvel événement privé</button></div>
+    <div class="ag-list" id="v-list" style="margin-bottom:8px">${list.length?list.map(e=>card(e).replace(/<span class="t mono">/,`<span class="t mono">${range(e)[0].getDate()} ${esc(mShort(range(e)[0]))}<br>`)).join(''):'<div class="empty">Aucun événement privé pour l’instant. Créez-en un ici, ou activez « Ranger dans le coffre » dans un événement.</div>'}</div>`}
+  <div class="row" style="margin-top:14px"><button class="btn ghost" id="v-lock">${I.lock}Verrouiller le coffre</button></div>
+  <section class="set-sec" style="margin-top:16px;border-top:1px solid var(--line);padding-top:18px">
     <h3>Sécurité</h3>
-    <label class="sw"><input type="checkbox" id="v-bio-t" ${S.vault.bio?'checked':''}><span>Ouvrir avec l’empreinte digitale<small id="v-bio-s">${S.vault.bio?'Activée sur cet appareil':'Utilise le capteur du téléphone ou Windows Hello'}</small></span></label>
-    <label class="fld"><span>Verrouillage automatique</span><select id="v-auto">${[[1,'Après 1 min d’inactivité'],[2,'Après 2 min'],[5,'Après 5 min'],[15,'Après 15 min']].map(([v,l])=>`<option value="${v}" ${S.settings.autoLock===v?'selected':''}>${l}</option>`).join('')}</select></label>
-    <p class="hint">Le coffre se ferme aussi dès que l’application passe en arrière-plan.</p>
+    <label class="sw"><input type="checkbox" id="v-bio-t" ${bioOn()?'checked':''} ${!bioOn()&&st.level<1?'disabled':''}><span>Ouvrir avec l’empreinte digitale<small id="v-bio-s">${esc(bioStatusText())}</small></span></label>
+    <label class="fld"><span>Verrouillage automatique</span><select id="v-auto">${[[1,'Après 1 min sans utilisation'],[2,'Après 2 min sans utilisation'],[5,'Après 5 min sans utilisation'],[15,'Après 15 min sans utilisation']].map(([v,l])=>`<option value="${v}" ${S.settings.autoLock===v?'selected':''}>${l}</option>`).join('')}</select></label>
+    <p class="hint">Le délai compte aussi quand vous passez sur une autre application. Une absence courte (joindre un fichier, copier un code) ne ferme pas le coffre, et s’il se verrouille pendant une saisie, celle-ci est conservée.</p>
     <details><summary style="cursor:pointer;color:var(--ink);font-weight:600">Changer le code secret</summary>
       <form class="form" id="v-chg" style="margin-top:12px">${pinField('v-n1','Nouveau code','new-password')}${pinField('v-n2','Confirmer','new-password')}<p class="err" id="v-cerr" hidden></p><button class="btn ghost" type="submit">Enregistrer le nouveau code</button></form></details>
   </section>`,'vault',sh=>{
-    sh.querySelector('#v-new').onclick=()=>openEditor(null,{date:ymd(new Date()),secure:true});
+    sh.querySelector('#v-tabs').onclick=e=>{const b=e.target.closest('[data-val]');if(b&&b.dataset.val!==S.vaultTab)vaultList(b.dataset.val)};
+    const vn=sh.querySelector('#v-new');if(vn)vn.onclick=()=>openEditor(null,{date:ymd(new Date()),secure:true});
+    const vl=sh.querySelector('#v-list');if(vl)vl.onclick=e=>{const s=e.target.closest('[data-share]');if(s){quickShare(s.dataset.share);return}const c=e.target.closest('[data-id]');if(c)openDetail(c.dataset.id)};
+    const kn=sh.querySelector('#k-new');if(kn)kn.onclick=()=>openKeyEditor(null);
+    const kl=sh.querySelector('#k-list');if(kl)kl.onclick=keyAction;
+    const ks=sh.querySelector('#k-search');if(ks)ks.oninput=()=>{kl.innerHTML=keyListHtml(ks.value)};
     sh.querySelector('#v-lock').onclick=()=>lockVault(false);
-    sh.querySelector('#v-list').onclick=e=>{const s=e.target.closest('[data-share]');if(s){quickShare(s.dataset.share);return}const c=e.target.closest('[data-id]');if(c)openDetail(c.dataset.id)};
     sh.querySelector('#v-auto').onchange=e=>{S.settings.autoLock=+e.target.value;saveSettings()};
-    const bt=sh.querySelector('#v-bio-t');
+    const bt=sh.querySelector('#v-bio-t'),bs=sh.querySelector('#v-bio-s');
     bt.onchange=async()=>{
-      if(bt.checked){try{await bioRegister();sh.querySelector('#v-bio-s').textContent='Activée sur cet appareil';toast('Empreinte activée')}catch(e){bt.checked=false;sh.querySelector('#v-bio-s').textContent=bioMsg(e)}}
-      else{S.vault.bio=null;await DB.set('vault',S.vault);sh.querySelector('#v-bio-s').textContent='Désactivée';toast('Empreinte désactivée')}};
+      if(bt.checked){bt.disabled=true;try{await bioRegister();S.settings.bioAsked=true;saveSettings();bs.textContent=bioStatusText();toast('Empreinte activée')}catch(e){bt.checked=false;bs.textContent=bioMsg(e)||bioStatusText()}finally{bt.disabled=false}}
+      else{await bioDisable();bs.textContent=bioStatusText();toast('Empreinte désactivée')}};
     sh.querySelector('#v-chg').onsubmit=async e=>{e.preventDefault();const a=sh.querySelector('#v-n1').value,b=sh.querySelector('#v-n2').value,er=sh.querySelector('#v-cerr');
       if(!/^\d{4,8}$/.test(a)){er.textContent='4 à 8 chiffres.';er.hidden=false;return}if(a!==b){er.textContent='Les codes ne correspondent pas.';er.hidden=false;return}
-      const salt=rand(16);S.vaultKey=await deriveKey(a,salt);S.vault.salt=b64(salt);
-      if(S.vault.bio)S.vault.bio.rawKey=b64(new Uint8Array(await crypto.subtle.exportKey('raw',S.vaultKey)));
-      await saveVault();toast('Code secret modifié');vaultList()};
+      await changePin(a);toast('Code secret modifié');vaultList()};
   });
 }
-function bioMsg(e){
-  const n=e&&e.name;
-  if(n==='NotAllowedError')return 'Empreinte refusée ou annulée. Utilisez votre code.';
-  if(NATIVE)return 'Aucune empreinte enregistrée sur ce téléphone. Ajoutez-en une dans Paramètres › Sécurité, puis réessayez.';
-  return 'Aucun capteur d’empreinte n’a répondu sur cet appareil. Vérifiez qu’une empreinte est enregistrée dans les réglages du téléphone (ou Windows Hello sur PC), puis réessayez. Votre code fonctionne toujours.';
-}
-function nativeBio(title){return new Promise((res,rej)=>{window.__bioDone=(ok,msg)=>{window.__bioDone=null;ok?res():rej(Object.assign(new Error(msg||'refus'),{name:'NotAllowedError'}))};try{OrbiteNative.biometric(title)}catch(e){rej(e)}})}
-async function bioRegister(){
-  if(NATIVE){if(!OrbiteNative.hasBiometric())throw new Error('none');await nativeBio('Activer l’empreinte');S.vault.bio={native:true,rawKey:b64(new Uint8Array(await crypto.subtle.exportKey('raw',S.vaultKey)))};await DB.set('vault',S.vault);return}
-  if(!window.PublicKeyCredential||!navigator.credentials)throw new Error('unsupported');
-  const cred=await navigator.credentials.create({publicKey:{challenge:rand(32),rp:{name:'Orbite'},user:{id:rand(16),name:'orbite-coffre',displayName:'Coffre Orbite'},
-    pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'discouraged'},timeout:60000}});
-  S.vault.bio={credId:b64(new Uint8Array(cred.rawId)),rawKey:b64(new Uint8Array(await crypto.subtle.exportKey('raw',S.vaultKey)))};
-  await DB.set('vault',S.vault);
-}
-async function bioUnlock(){
-  if(S.vault.bio.native){await nativeBio('Ouvrir le coffre');}
-  else{if(!window.PublicKeyCredential||!navigator.credentials)throw new Error('unsupported');
-  await navigator.credentials.get({publicKey:{challenge:rand(32),allowCredentials:[{type:'public-key',id:ub64(S.vault.bio.credId)}],userVerification:'required',timeout:60000}});}
-  const key=await crypto.subtle.importKey('raw',ub64(S.vault.bio.rawKey),'AES-GCM',true,['encrypt','decrypt']);
-  S.secure=await decJSON(key,S.vault.box);S.vaultKey=key;
-}
-let lastAct=Date.now();
-['pointerdown','keydown','wheel','touchstart'].forEach(t=>addEventListener(t,()=>{lastAct=Date.now()},{passive:true}));
-setInterval(()=>{if(S.vaultKey&&Date.now()-lastAct>S.settings.autoLock*60000)lockVault(true)},10000);
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&S.vaultKey)lockVault(true)});
 
 /* ---------- paramètres ---------- */
 function lum(hex){let h=hex.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');const[r,g,b]=[0,2,4].map(i=>{const c=parseInt(h.substr(i,2),16)/255;return c<=.03928?c/12.92:Math.pow((c+.055)/1.055,2.4)});return .2126*r+.7152*g+.0722*b}
@@ -1579,10 +1862,11 @@ function checkReminders(){
 
 /* ---------- bouton retour Android ---------- */
 window.__back=()=>{
+  if(!$('#gateWrap').hidden){gateBack();return true}
   if(!$('#lightbox').hidden){closeLightbox();return true}
   if(!$('#choiceWrap').hidden){$('#choiceWrap .btn[data-cancel]').click();return true}
   if(!$('#confirmWrap').hidden){const c=$('#confirmWrap [data-cancel].btn');if(c)c.click();return true}
-  if(!$('#sheetWrap').hidden){closeSheet();return true}
+  if(!$('#sheetWrap').hidden){if(S.sheetKind==='key')vaultList('keys');else closeSheet();return true}
   if(S.view==='day'){S.view='month';render();return true}
   return false;
 };
@@ -1717,7 +2001,7 @@ function reportSync(r,source){
 }
 let syncTimer=null;
 function scheduleSync(delay,source){clearTimeout(syncTimer);syncTimer=setTimeout(async()=>{await READY;reportSync(await syncPhone(),source)},delay)}
-window.__onResume=()=>scheduleSync(400,'reprise');
+window.__onResume=()=>{checkAutoLock();scheduleSync(400,'reprise')};
 window.__onPhoneCalendarChange=()=>scheduleSync(1500,'changement');
 setInterval(()=>{if(NATIVE)scheduleSync(0,'minuterie')},5*60000);
 async function initPhoneSync(){
@@ -1935,6 +2219,67 @@ function recurSelfCheck(){
   return{pass:!fails.length,fails:fails.slice(0,6)};
 }
 
+/* ---------- contrôles du coffre (auto-test) ---------- */
+async function vaultSelfCheck(){
+  const fails=[],chk=(c,m)=>{if(!c)fails.push(m)},asked=S.settings.bioAsked,cur=S.cur,view=S.view;
+  const wait=async c=>{for(let i=0;i<200&&!c();i++)await new Promise(r=>setTimeout(r,100));return c()};
+  try{
+    S.settings.bioAsked=true;
+    if(!S.vault)await createVault('2468');else if(!S.vaultKey)await unlockWithPin('2468');
+    S.secure=S.secure.filter(e=>e.title!=='Test privé'&&e.title!=='Brouillon coffre');S.keys=S.keys.filter(k=>k.name!=='Test clé');
+    S.secure.push({id:uid(),title:'Test privé',allDay:false,start:'2026-12-03T09:00',end:'2026-12-03T10:00',color:'#8693AD',attachments:[],rec:normRec({freq:'week',days:[4]},'2026-12-03')});
+    S.keys.push({id:uid(),type:'key',name:'Test clé',user:'moi',secret:'SECRET-TEST-7788\nCODE-2',url:'',notes:''});
+    await saveVault();
+    chk(!JSON.stringify(await DB.get('vault')).includes('SECRET-TEST-7788'),'clé visible en clair dans le stockage');
+    lockVault(false);chk(!S.vaultKey&&!S.keys.length,'verrouillage');
+    let wrong=false;try{await unlockWithPin('0000')}catch(e){wrong=true}chk(wrong&&!S.vaultKey,'mauvais code accepté');
+    await unlockWithPin('2468');
+    chk(S.keys.some(k=>k.secret==='SECRET-TEST-7788\nCODE-2')&&S.secure.some(e=>e.title==='Test privé'),'données perdues après réouverture');
+    lastAct=Date.now()-20000;checkAutoLock();chk(!!S.vaultKey,'fermé après une absence courte');
+    openEditor(null,{date:'2026-12-04',secure:true});$('#f-title').value='Brouillon coffre';
+    lastAct=Date.now()-(S.settings.autoLock*60000+5000);checkAutoLock();
+    chk(S.soft&&!$('#gateWrap').hidden&&$('#f-title')&&$('#f-title').value==='Brouillon coffre','saisie perdue au verrouillage');
+    $('#g-p1').value='2468';$('#gForm').requestSubmit();
+    chk(await wait(()=>!S.soft&&$('#gateWrap').hidden),'déverrouillage pendant une saisie');
+    chk(!!$('#f-title')&&$('#f-title').value==='Brouillon coffre','saisie absente après déverrouillage');
+    await saveDraft();
+    const box=await decJSON(S.vaultKey,(await DB.get('vault')).box);
+    chk(box.events.some(e=>e.title==='Brouillon coffre'),'événement du coffre non enregistré');
+    await changePin('1357');lockVault(false);
+    let old=false;try{await unlockWithPin('2468')}catch(e){old=true}chk(old,'ancien code encore accepté');
+    await unlockWithPin('1357');chk(S.keys.some(k=>k.name==='Test clé'),'code changé : données perdues');
+    await changePin('2468');
+    lockVault(false);
+  }catch(e){fails.push('erreur : '+String(e&&e.message||e))}
+  S.settings.bioAsked=asked;closeSheet();if(gateRes)gateDone(false);S.cur=cur;S.view=view;render();
+  return{pass:!fails.length,fails:fails.slice(0,6)};
+}
+/* Test de l'empreinte sur le téléphone virtuel (le test automatique pose le doigt à chaque invite). */
+window.__orbiteBioTest=async()=>{
+  const rep=(tag,o)=>{try{OrbiteNative.selftestResult('BIO '+tag+' '+JSON.stringify(o||{}))}catch(e){}};
+  try{
+    await READY;
+    const st=bioStatus();rep('STATUS',st);
+    if(!S.vault)await createVault('2468');else if(!S.vaultKey)await unlockWithPin('2468');
+    if(!S.keys.some(k=>k.name==='Clé empreinte'))S.keys.push({id:uid(),type:'key',name:'Clé empreinte',user:'',secret:'RECUP-1234-5678',url:'',notes:''});
+    await saveVault();
+    if(st.level<1){rep('SKIP',{reason:st.reason});return}
+    await bioRegister();
+    rep('ENABLED',{mode:S.vault.bio&&S.vault.bio.mode,rawStored:JSON.stringify(await DB.get('vault')).includes('rawKey')});
+    lockVault(false);
+    await unlockWithBio();
+    rep('UNLOCKED',{open:!!S.vaultKey,secret:S.keys.some(k=>k.secret==='RECUP-1234-5678')});
+    S.settings.autoLock=1;lastAct=Date.now();window.__bioPhase=1;
+    const prev=window.__onResume;
+    window.__onResume=()=>{
+      if(window.__bioPhase===1){prev&&prev();setTimeout(()=>{rep('SHORT',{open:!!S.vaultKey});S.settings.autoLock=0.1;lastAct=Date.now();window.__bioPhase=2},800)}
+      else if(window.__bioPhase===2){prev&&prev();setTimeout(()=>{rep('LONG',{open:!!S.vaultKey});window.__bioPhase=0;S.settings.autoLock=2},800)}
+      else prev&&prev();
+    };
+    rep('READY',{});
+  }catch(e){rep('FAIL',{code:e&&e.code||'',msg:String(e&&e.message||e)})}
+};
+
 /* ---------- auto-test (lancé uniquement par le test automatique) ---------- */
 window.__orbiteSelftest=async()=>{
   const out={pass:false};
@@ -1944,6 +2289,7 @@ window.__orbiteSelftest=async()=>{
     out.subtle=!!(window.crypto&&crypto.subtle);
     const k=await deriveKey('2468',rand(16));out.crypto=(await decJSON(k,await encJSON(k,{v:42}))).v===42;
     out.recur=recurSelfCheck();
+    out.vault=await vaultSelfCheck();
     out.native=NATIVE;
     if(NATIVE){
       out.perm=OrbiteNative.hasCalendarPermission();
@@ -1959,7 +2305,7 @@ window.__orbiteSelftest=async()=>{
     for(const v of ['day','week','month','year']){S.view=v;render()}
     out.render=true;
     out.errs=window.__errs.slice(0,5);
-    out.pass=out.db&&out.subtle&&out.crypto&&out.recur.pass&&out.render&&!out.errs.length&&(!NATIVE||(out.import.ok&&out.reimport.ok&&out.reimport.added===0&&out.follow&&out.samples===0&&out.allDayOk&&out.timedOk));
+    out.pass=out.db&&out.subtle&&out.crypto&&out.recur.pass&&out.vault.pass&&out.render&&!out.errs.length&&(!NATIVE||(out.import.ok&&out.reimport.ok&&out.reimport.added===0&&out.follow&&out.samples===0&&out.allDayOk&&out.timedOk));
   }catch(e){out.error=String(e&&e.stack||e).slice(0,600)}
   const txt=JSON.stringify(out);
   try{if(NATIVE)OrbiteNative.selftestResult('RESULT '+txt)}catch(e){}
@@ -1973,6 +2319,7 @@ const READY=(async()=>{try{
   const st=await DB.get('settings');if(st)S.settings={...DEF,...st};
   const ev=await DB.get('events');if(Array.isArray(ev))S.events=ev;else await DB.set('events',S.events);
   S.vault=await DB.get('vault')||null;
+  if(S.vault&&S.vault.bio&&S.vault.bio.native&&S.vault.bio.rawKey){S.vault.bio=null;await DB.set('vault',S.vault)}
   const ig=await DB.get('phoneIgnore');S.ignore=new Set(Array.isArray(ig)?ig.map(String):[]);
   S.view=S.settings.defaultView;S.lastKey='';
   applySettings();updateVaultBtn();render();

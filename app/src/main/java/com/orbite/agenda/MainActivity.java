@@ -7,6 +7,8 @@ import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -17,12 +19,15 @@ import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PersistableBundle;
 import android.provider.CalendarContract;
+import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
+import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -52,6 +57,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
@@ -78,6 +84,7 @@ public class MainActivity extends FragmentActivity {
     private boolean selftest;
     private boolean biotest;
     private boolean appstest;
+    private volatile boolean secureNow;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private String clipSecret;
     private long clipUntil;
@@ -488,6 +495,78 @@ public class MainActivity extends FragmentActivity {
                     startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 } catch (Exception ignored) { }
             });
+        }
+
+        /** Clé de la puce de sécurité mêlée au code du coffre (voir VaultHw). */
+        @JavascriptInterface
+        public String hwMac(String dataB64, boolean create) {
+            return VaultHw.mac(dataB64, create);
+        }
+
+        @JavascriptInterface
+        public String hwStatus() {
+            return VaultHw.status();
+        }
+
+        /** Coffre ouvert : ni capture d'écran, ni enregistrement, aperçu masqué dans les applications récentes. */
+        @JavascriptInterface
+        public void secureScreen(final boolean on) {
+            runOnUiThread(() -> {
+                if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                secureNow = on;
+            });
+        }
+
+        @JavascriptInterface
+        public boolean isSecureScreen() {
+            return secureNow;
+        }
+
+        /** Enregistre la sauvegarde chiffrée du coffre dans Téléchargements ("ok"), ou la propose au partage ("shared"). */
+        @JavascriptInterface
+        public String saveDownload(String name, String mime, String text) {
+            try {
+                byte[] data = text.getBytes(StandardCharsets.UTF_8);
+                if (Build.VERSION.SDK_INT >= 29) {
+                    ContentResolver cr = getContentResolver();
+                    ContentValues v = new ContentValues();
+                    v.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                    v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                    v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                    v.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                    Uri uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                    if (uri == null) return "error";
+                    try (OutputStream os = cr.openOutputStream(uri)) {
+                        if (os == null) return "error";
+                        os.write(data);
+                    }
+                    ContentValues done = new ContentValues();
+                    done.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                    cr.update(uri, done, null, null);
+                    Log.i(TEST_TAG, "SAVE_OK " + name + " " + data.length);
+                    return "ok";
+                }
+                // Android 7 à 9 : on propose d'enregistrer le fichier où l'on veut (Drive, e-mail…)
+                File dir = new File(getCacheDir(), "partage");
+                if (!dir.exists() && !dir.mkdirs()) return "error";
+                File f = new File(dir, name);
+                try (FileOutputStream os = new FileOutputStream(f)) {
+                    os.write(data);
+                }
+                final Uri uri = FileProvider.getUriForFile(MainActivity.this, "com.orbite.agenda.files", f);
+                runOnUiThread(() -> {
+                    try {
+                        Intent send = new Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(Intent.createChooser(send, "Enregistrer la sauvegarde du coffre"));
+                    } catch (Exception ignored) { }
+                });
+                return "shared";
+            } catch (Exception e) {
+                Log.w(TEST_TAG, "saveDownload " + e);
+                return "error";
+            }
         }
 
         /** Coffre verrouillé : les copies de fichiers ouvertes dans une autre application sont effacées. */

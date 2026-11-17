@@ -32,13 +32,22 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
         run: gradle --no-daemon assembleRelease
 
-      - name: Renommer l'APK
-        run: cp app/build/outputs/apk/release/app-release.apk Orbite.apk
+      - name: Signer avec la clé privée (rotation depuis l'ancienne clé)
+        env:
+          ORBITE_KEY_PASS: ${{ secrets.ORBITE_KEY_PASS }}
+        run: bash ci/signer.sh app/build/outputs/apk/release/app-release.apk Orbite.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: Orbite-apk
           path: Orbite.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Orbite-test
+          path: |
+            orbite-ancienne-cle.apk
+            signature.txt
 
   test:
     name: Tester sur un téléphone virtuel
@@ -51,6 +60,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: Orbite-apk
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Orbite-test
+
+      - name: Version publiée précédente (test de mise à jour)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download --repo "${{ github.repository }}" --pattern Orbite.apk --output precedente.apk || echo "pas de version précédente"
 
       - name: Activer l'accélération matérielle
         run: |

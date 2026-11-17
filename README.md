@@ -30,7 +30,11 @@ Touchez le cadenas en haut de l’écran. À la création, choisissez un code de
 - **Clés et mots de passe** : clés de récupération des applications (codes de secours, plusieurs lignes) et mots de passe, avec Afficher, Copier (effacé du presse-papiers après 1 minute), Générer, Rechercher, Modifier, Supprimer. On peut y joindre des **photos (JPEG…) et des fichiers (PDF…)**, jusqu’à 25 Mo chacun, chiffrés un par un.
 - **Applications** : choisissez des applications du téléphone (banque, messagerie…) pour les ouvrir depuis le coffre, après l’empreinte. Elles restent aussi sur l’écran d’accueil ; pour les protéger elles aussi par empreinte sur un Xiaomi, cherchez « Verrouillage des applications » dans les Paramètres.
 - **Verrouillage** : après le délai choisi sans utilisation (1, 2, 5 ou 15 min), même si vous êtes passé sur une autre application. S’il se ferme pendant une saisie, celle-ci est conservée : déverrouillez et continuez.
-- Tout est chiffré sur le téléphone (AES-256). La clé du coffre est protégée par votre code et, pour l’empreinte, par le matériel sécurisé du téléphone (Android Keystore). Si les empreintes du téléphone changent, ouvrez avec votre code : l’empreinte vous sera reproposée.
+- Tout est chiffré sur le téléphone (AES-256). La clé du coffre est protégée par votre code **mêlé à une clé de la puce de sécurité du téléphone** (Android Keystore) : une copie des fichiers d’Orbite est inutilisable sur un autre appareil. L’empreinte passe aussi par la puce. Si les empreintes du téléphone changent, ouvrez avec votre code : l’empreinte vous sera reproposée.
+- **Code** : 6 à 8 chiffres tapés sur le clavier intégré d’Orbite (un clavier espion ne voit rien), ou un mot de passe avec des lettres. Après 5 codes faux, l’attente s’allonge (30 s, 1 min, 5 min, 15 min, 1 h, 3 h), même si l’application est relancée. Changer le code demande le code actuel.
+- **Écran protégé** : quand le coffre est ouvert, ni capture d’écran ni enregistrement, et l’aperçu est masqué dans les applications récentes.
+- **Sauvegarde chiffrée** (Coffre › Sécurité › Exporter le coffre) : un fichier `Orbite-coffre-AAAA-MM-JJ.json` dans Téléchargements, protégé par son propre mot de passe (10 caractères minimum). C’est le seul moyen de retrouver le coffre sur un autre téléphone (Importer une sauvegarde).
+- **Signature** : Orbite est signée avec une clé privée (secret GitHub `ORBITE_KEY_PASS`) ; une fausse mise à jour signée avec l’ancienne clé est refusée par Android.
 
 ## Fonctionnement
 
@@ -42,4 +46,6 @@ Chaque envoi sur la branche `main` fabrique automatiquement un nouvel APK, l’i
 - `app/src/main/java/com/orbite/agenda/PhoneCalendar.java` : lecture de l’agenda du téléphone pour l’import
 - `ci/test-telephone.sh` : test automatique sur téléphone virtuel (agenda, invitations, répétitions, coffre, empreinte)
 - `ci/empreinte.py` : enregistre un doigt simulé sur le téléphone virtuel pour tester l’empreinte
+- `ci/signer.sh` : signature avec la clé privée et preuve de rotation depuis l’ancienne clé
+- `app/src/main/java/com/orbite/agenda/VaultHw.java` : clé de la puce de sécurité mêlée au code du coffre
 - `keystore/orbite.jks` : clé de signature, toujours la même pour que les mises à jour s'installent par-dessus

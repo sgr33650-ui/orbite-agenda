@@ -2,13 +2,27 @@
 # Test de bout en bout d'Orbite sur un téléphone Android virtuel.
 # 1. installe l'APK  2. crée un agenda de test  3. lance Orbite en mode test
 # 4. vérifie la lecture native de l'agenda, l'import, le stockage, le chiffrement et l'affichage
-# 5. vérifie le coffre (verrouillage sans perte de saisie, photos chiffrées), l'ouverture par empreinte digitale
-#    et les applications ouvertes depuis le coffre.
+# 5. vérifie le coffre (lié à la puce, verrouillage sans perte de saisie, photos chiffrées, sauvegarde),
+#    l'ouverture par empreinte digitale, l'écran protégé et les applications ouvertes depuis le coffre.
+# Avant tout : la mise à jour s'installe par-dessus la version publiée précédente (données conservées)
+# et une fausse mise à jour signée avec l'ancienne clé est refusée.
 set -u
 APK="${1:-Orbite.apk}"
 PKG=com.orbite.agenda
 TAG=ORBITE_SELFTEST
 fail() { echo "::error::ÉCHEC : $1"; exit 1; }
+
+# Attend une ligne du journal de test contenant le motif donné (60 s maximum)
+wait_for() {
+  local pat="$1" out=""
+  for i in $(seq 1 30); do
+    out=$(adb logcat -d -s "$TAG" | tr -d '\r' | grep -E "$pat" | tail -n1)
+    [ -n "$out" ] && { echo "$out"; return 0; }
+    sleep 2
+  done
+  return 1
+}
+
 
 echo "== Téléphone virtuel réglé sur l'heure de Paris"
 adb root >/dev/null 2>&1 || true
@@ -19,10 +33,32 @@ echo "Fuseau du téléphone : $TZ_DEV"
 adb shell svc power stayon true || true
 adb shell settings put system screen_off_timeout 2147483647 || true
 
-echo "== Installation de l'APK"
-adb install -r "$APK" || fail "installation de l'APK"
+PREV_DONE=0
+if [ -s precedente.apk ]; then
+  echo "== Version publiée précédente installée, avec un coffre et des données"
+  adb install precedente.apk || fail "installation de la version précédente"
+  adb shell pm grant $PKG android.permission.READ_CALENDAR || true
+  adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS || true
+  adb logcat -c
+  adb shell am start -W -n $PKG/.MainActivity --ez orbite_selftest true >/dev/null || fail "lancement de la version précédente"
+  wait_for " JS RESULT " >/dev/null || echo "::warning::l'ancienne version n'a pas fini son auto-test"
+  adb shell am force-stop $PKG
+  PREV_DONE=1
+fi
+
+echo "== Installation de l'APK$([ $PREV_DONE = 1 ] && echo ' comme mise à jour')"
+OUT=$(adb install -r "$APK" 2>&1); echo "$OUT"
+echo "$OUT" | grep -q "Success" || fail "la mise à jour ne s'installe pas par-dessus la version précédente ($OUT)"
 adb shell pm grant $PKG android.permission.READ_CALENDAR || fail "autorisation agenda"
 adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS || true
+if [ "$(cat signature.txt 2>/dev/null)" = "rotation" ] && [ -s orbite-ancienne-cle.apk ]; then
+  echo "== Fausse mise à jour signée avec l'ancienne clé (publique)"
+  OUT=$(adb install -r orbite-ancienne-cle.apk 2>&1); echo "$OUT"
+  echo "$OUT" | grep -q "Success" && fail "une fausse mise à jour signée avec l'ancienne clé a été acceptée"
+  echo "Fausse mise à jour refusée par Android : seule la nouvelle clé privée peut mettre Orbite à jour"
+else
+  echo "::warning::Nouvelle clé privée non utilisée (secret ORBITE_KEY_PASS absent) : test de fausse mise à jour non fait"
+fi
 
 echo "== Création d'un agenda de test sur le téléphone virtuel"
 NOW=$(date +%s)
@@ -66,24 +102,20 @@ echo "$NATIVE_LINE" | grep -q "NATIVE ok=true" || fail "lecture de l'agenda du t
 echo "$JS_LINE" | grep -q '"recur":{"pass":true' || fail "calcul des dates répétées sur le téléphone ($JS_LINE)"
 echo "Dates répétées vérifiées sur le téléphone (changement d'heure, fin de mois, 29 février, dates supprimées)"
 echo "$JS_LINE" | grep -q '"vault":{"pass":true' || fail "coffre sur le téléphone ($JS_LINE)"
-echo "Coffre vérifié sur le téléphone : chiffrement, photos chiffrées à part, mauvais code refusé, verrou pendant une saisie sans perte, changement de code"
+VAULT=$(echo "$JS_LINE" | grep -o '"vault":{[^}]*}')
+echo "$VAULT"
+echo "$VAULT" | grep -q '"hw":1' || fail "coffre non lié à la puce du téléphone ($VAULT)"
+if [ $PREV_DONE = 1 ]; then
+  echo "$VAULT" | grep -q '"existed":true' || fail "coffre de la version précédente perdu à la mise à jour ($VAULT)"
+  echo "Mise à jour vérifiée : le coffre de la version précédente s'ouvre avec son code et passe sous la protection de la puce"
+fi
+echo "Coffre vérifié sur le téléphone : lié à la puce (copie inutilisable), chiffrement, photos chiffrées à part, sauvegarde chiffrée, attente après 5 codes faux, verrou pendant une saisie sans perte, changement de code"
 echo "$JS_LINE" | grep -q '"pass":true' || fail "auto-test de l'interface ($JS_LINE)"
 if [ "$EXPECT" -gt 0 ]; then
   ADDED=$(echo "$JS_LINE" | grep -o '"added":[0-9]*' | head -n1 | cut -d: -f2)
   [ "${ADDED:-0}" -ge "$EXPECT" ] || fail "import : ${ADDED:-0} rendez-vous au lieu de $EXPECT"
   echo "Import vérifié : $ADDED rendez-vous (attendus : $EXPECT)"
 fi
-
-# Attend une ligne du journal de test contenant le motif donné (60 s maximum)
-wait_for() {
-  local pat="$1" out=""
-  for i in $(seq 1 30); do
-    out=$(adb logcat -d -s "$TAG" | tr -d '\r' | grep -E "$pat" | tail -n1)
-    [ -n "$out" ] && { echo "$out"; return 0; }
-    sleep 2
-  done
-  return 1
-}
 
 if [ -n "$CAL_ID" ]; then
   echo "== Une invitation arrive dans l'agenda pendant qu'Orbite est ouvert"
@@ -187,6 +219,7 @@ else
   L=$(touch_until "JS BIO (UNLOCKED|FAIL)") || fail "ouverture par empreinte sans réponse"
   echo "$L"
   echo "$L" | grep -q '"open":true,"secret":true' || fail "ouverture du coffre par empreinte ($L)"
+  echo "$L" | grep -q '"secure":true' || fail "écran non protégé quand le coffre est ouvert ($L)"
   wait_for "JS BIO READY" >/dev/null || fail "test d'absence non prêt"
   echo "== Coffre : courte absence (autre application), il reste ouvert"
   adb shell input keyevent KEYCODE_HOME; sleep 5
@@ -200,6 +233,7 @@ else
   L=$(wait_for "JS BIO LONG") || fail "retour dans Orbite après une longue absence"
   echo "$L"
   echo "$L" | grep -q '"open":false' || fail "coffre resté ouvert après le délai ($L)"
+  echo "$L" | grep -q '"secure":false' || fail "écran encore protégé une fois le coffre fermé ($L)"
   echo "Empreinte vérifiée sur le téléphone : activation, ouverture, clé protégée par le téléphone, délai de verrouillage"
 fi
 adb logcat -d -s "$TAG" | tr -d '\r' | grep -E "BIO_" | tail -n 12
@@ -217,6 +251,16 @@ echo "$L" | grep -q '"icon":true' || fail "icône de l'application ($L)"
 echo "$L" | grep -q '"kept":true' || fail "application du coffre perdue après verrouillage ($L)"
 echo "$L" | grep -q '"self":false' || fail "Orbite apparaît dans sa propre liste ($L)"
 echo "$L" | grep -q '"plain":false' || fail "liste des applications du coffre enregistrée en clair ($L)"
+L=$(wait_for "JS APPS (SAVE|FAIL)") || fail "sauvegarde du coffre non créée"
+echo "$L"
+echo "$L" | grep -q '"r":"ok"' || fail "sauvegarde non enregistrée dans Téléchargements ($L)"
+SAVED=$(adb shell ls /sdcard/Download/ | tr -d '\r' | grep "Orbite-coffre-test" | head -n1)
+[ -n "$SAVED" ] || fail "fichier de sauvegarde absent de Téléchargements"
+adb pull "/sdcard/Download/$SAVED" sauvegarde-test.json >/dev/null || fail "lecture de la sauvegarde"
+head -c 60 sauvegarde-test.json; echo
+grep -q '"format":"orbite-coffre"' sauvegarde-test.json || fail "fichier de sauvegarde illisible"
+grep -q -E 'RECUP-1234|SECRET-TEST|Test clé' sauvegarde-test.json && fail "secret lisible en clair dans la sauvegarde"
+echo "Sauvegarde vérifiée : $SAVED dans Téléchargements, chiffrée"
 L=$(wait_for "JS APPS (TILE|FAIL)") || fail "application absente du coffre"
 echo "$L"
 echo "$L" | grep -q '"shown":true' || fail "application absente de l'onglet Applications ($L)"

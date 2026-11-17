@@ -33,22 +33,9 @@ echo "Fuseau du téléphone : $TZ_DEV"
 adb shell svc power stayon true || true
 adb shell settings put system screen_off_timeout 2147483647 || true
 
-PREV_DONE=0
-if [ -s precedente.apk ]; then
-  echo "== Version publiée précédente installée, avec un coffre et des données"
-  adb install precedente.apk || fail "installation de la version précédente"
-  adb shell pm grant $PKG android.permission.READ_CALENDAR || true
-  adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS || true
-  adb logcat -c
-  adb shell am start -W -n $PKG/.MainActivity --ez orbite_selftest true >/dev/null || fail "lancement de la version précédente"
-  wait_for " JS RESULT " >/dev/null || echo "::warning::l'ancienne version n'a pas fini son auto-test"
-  adb shell am force-stop $PKG
-  PREV_DONE=1
-fi
-
-echo "== Installation de l'APK$([ $PREV_DONE = 1 ] && echo ' comme mise à jour')"
+echo "== Installation de l'APK"
 OUT=$(adb install -r "$APK" 2>&1); echo "$OUT"
-echo "$OUT" | grep -q "Success" || fail "la mise à jour ne s'installe pas par-dessus la version précédente ($OUT)"
+echo "$OUT" | grep -q "Success" || fail "installation de l'APK ($OUT)"
 adb shell pm grant $PKG android.permission.READ_CALENDAR || fail "autorisation agenda"
 adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS || true
 if [ "$(cat signature.txt 2>/dev/null)" = "rotation" ] && [ -s orbite-ancienne-cle.apk ]; then
@@ -105,10 +92,6 @@ echo "$JS_LINE" | grep -q '"vault":{"pass":true' || fail "coffre sur le téléph
 VAULT=$(echo "$JS_LINE" | grep -o '"vault":{[^}]*}')
 echo "$VAULT"
 echo "$VAULT" | grep -q '"hw":1' || fail "coffre non lié à la puce du téléphone ($VAULT)"
-if [ $PREV_DONE = 1 ]; then
-  echo "$VAULT" | grep -q '"existed":true' || fail "coffre de la version précédente perdu à la mise à jour ($VAULT)"
-  echo "Mise à jour vérifiée : le coffre de la version précédente s'ouvre avec son code et passe sous la protection de la puce"
-fi
 echo "Coffre vérifié sur le téléphone : lié à la puce (copie inutilisable), chiffrement, photos chiffrées à part, sauvegarde chiffrée, attente après 5 codes faux, verrou pendant une saisie sans perte, changement de code"
 echo "$JS_LINE" | grep -q '"pass":true' || fail "auto-test de l'interface ($JS_LINE)"
 if [ "$EXPECT" -gt 0 ]; then
@@ -276,6 +259,30 @@ echo "$TOP" | grep -q "com.android.settings" || fail "l'application choisie ne s
 echo "Applications vérifiées : liste du téléphone, icônes, choix chiffré, ouverture depuis le coffre"
 adb shell am start -n $PKG/.MainActivity >/dev/null; sleep 2
 adb logcat -d | tr -d '\r' | grep -q "FATAL EXCEPTION" && fail "l'application s'est arrêtée brutalement (applications)"
+
+if [ -s precedente.apk ]; then
+  echo "== Mise à jour depuis la version publiée précédente (coffre existant, données conservées)"
+  adb uninstall $PKG >/dev/null 2>&1 || true
+  adb install precedente.apk || fail "installation de la version précédente"
+  adb shell pm grant $PKG android.permission.READ_CALENDAR || true
+  adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS || true
+  adb logcat -c
+  adb shell am start -W -n $PKG/.MainActivity --ez orbite_selftest true >/dev/null || fail "lancement de la version précédente"
+  OLD=$(wait_for " JS RESULT ") || fail "la version précédente n'a pas fini son auto-test"
+  echo "$OLD" | grep -o '"vault":{[^}]*}'
+  adb shell am force-stop $PKG
+  OUT=$(adb install -r "$APK" 2>&1); echo "$OUT"
+  echo "$OUT" | grep -q "Success" || fail "la mise à jour ne s'installe pas par-dessus la version publiée ($OUT)"
+  adb logcat -c
+  adb shell am start -W -n $PKG/.MainActivity --ez orbite_selftest true >/dev/null || fail "lancement après la mise à jour"
+  NEW=$(wait_for " JS RESULT ") || fail "pas de réponse après la mise à jour"
+  V=$(echo "$NEW" | grep -o '"vault":{[^}]*}'); echo "$V"
+  echo "$V" | grep -q '"pass":true' || fail "coffre après la mise à jour ($V)"
+  echo "$V" | grep -q '"existed":true' || fail "coffre de la version précédente perdu à la mise à jour ($V)"
+  echo "$V" | grep -q '"hw":1' || fail "coffre de la version précédente non lié à la puce ($V)"
+  echo "Mise à jour vérifiée : le coffre de la version publiée s'ouvre avec son code, ses données sont là, il passe sous la protection de la puce"
+  adb logcat -d | tr -d '\r' | grep -q "FATAL EXCEPTION" && fail "l'application s'est arrêtée brutalement (mise à jour)"
+fi
 
 echo "== Erreurs éventuelles de l'interface"
 adb logcat -d -s ORBITE_JS | tr -d '\r' | grep -iE "error|uncaught" | tail -n 20
